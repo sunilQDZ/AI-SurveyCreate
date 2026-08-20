@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Smart Survey Creator · Neon AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <!-- TOP BAR -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-logo">
+          <span>SS</span>
+        </div>
+        <div class="brand-text">
+          <div class="brand-title">Smart Survey Creator</div>
+          <div class="brand-subtitle">AI-powered · Clarifying prompts · Ready-to-use templates</div>
+        </div>
+      </div>
+      <div class="user-pill">
+        <span class="user-avatar">D</span>
+        <span class="user-name">Hi Mahipal</span>
+      </div>
+    </header>
+
+    <!-- MAIN LAYOUT -->
+    <main class="main-grid">
+      <!-- LEFT: CHAT PANEL -->
+      <section class="panel chat-panel" aria-label="Survey Assistant Chat">
+        <div id="chat" class="chat-window">
+          <div class="msg bot">
+            <div class="msg-label">Assistant</div>
+            <div class="msg-body">
+              👋 Hello! Let's create your survey.<br>
+              <span class="msg-hint">
+                Select a quick option or type your requirement.
+              </span>
+            </div>
+          </div>
+
+          <div id="quick" class="quick-row">
+            <button class="chip" data-value="Employee Feedback">👩‍💼 Employee Feedback</button>
+            <button class="chip" data-value="Customer Satisfaction">🛍️ Customer Satisfaction</button>
+            <button class="chip" data-value="Website Experience">🌐 Website Experience</button>
+            <button class="chip" data-value="Product Usage Feedback">📦 Product Usage Feedback</button>
+          </div>
+        </div>
+
+        <div class="chat-input-row">
+          <input
+            id="userInput"
+            type="text"
+            autocomplete="off"
+            placeholder="e.g. I want a CSAT survey of education department as a customer" />
+          <button id="sendBtn" class="btn btn-primary">Send</button>
+          <button id="restartBtn" class="btn btn-ghost">Restart</button>
+        </div>
+        <div class="chat-tip">
+          Tip: You can type anything — the assistant will only ask missing clarifying questions.
+        </div>
+      </section>
+
+      <!-- RIGHT: TEMPLATE PREVIEW -->
+      <aside class="panel preview-panel" aria-label="Template Preview">
+        <div class="panel-header">
+          <div class="panel-title">📋 Live Template Preview</div>
+          <div id="previewSubtitle" class="panel-subtitle">No templates yet</div>
+        </div>
+
+        <div id="templateList" class="template-list">
+          <div class="empty-state">
+            <div class="empty-icon">✨</div>
+            <div class="empty-title">No templates generated yet</div>
+            <div class="empty-text">Describe your survey idea on the left to see ready-made templates here.</div>
+          </div>
+        </div>
+
+        <div class="actions-row">
+          <button id="customizeBtn" class="btn btn-secondary" disabled>Customize Selected</button>
+          <button id="generateMoreBtn" class="btn btn-secondary" disabled>Generate More</button>
+          <button id="finalizeBtn" class="btn btn-ghost" disabled>Finalize Template</button>
+          <button id="downloadJsonBtn" class="btn btn-ghost" disabled>Download JSON</button>
+        </div>
+      </aside>
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="app-footer">
+      Built for SurveyCXM · Backend endpoints:
+      <code>/generate_question_flow</code>,
+      <code>/generate_survey</code>,
+      <code>/generate_more_surveys</code>,
+      <code>/customize_selected_template</code>,
+      <code>/finalize_template</code>
+    </footer>
+  </div>
+
+  <!-- Your existing script.js logic (the multi-question flow) -->
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

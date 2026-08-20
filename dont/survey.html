@@ -1,0 +1,1529 @@
+from flask import Flask, request, jsonify, render_template
+import json, os, re
+from datetime import datetime
+import openai
+
+app = Flask(__name__)
+
+openai.api_key = os.getenv("OPENAI_API_KEY", "")
+
+OUTPUT_FILE = "saved_surveys.json"
+RESPONSES_FILE = "responses.json"
+
+for path, default in [(OUTPUT_FILE, []), (RESPONSES_FILE, [])]:
+    if not os.path.exists(path):
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(default, fh, indent=2)
+
+# -----------------------
+# HELPERS
+# -----------------------
+def ensure_first_rating(survey, topic_hint=None):
+    base = f"On a scale of 1–10, how satisfied are you with {topic_hint or 'this'}?"
+    qlist = survey.get("questions", [])
+    if not qlist or "how satisfied" not in qlist[0].lower():
+        qlist.insert(0, base)
+    survey["questions"] = qlist
+    return survey
+
+def save_history(entry):
+    try:
+        with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        data = []
+    data.append(entry)
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+# -----------------------
+# ROUTES
+# -----------------------
+@app.route("/")
+def home():
+    return render_template("index.html")
+@app.route("/generate_question_flow", methods=["POST"])
+def generate_question_flow():
+    """Returns guided flow questions based on survey type or AI-generated ones."""
+    data = request.get_json() or {}
+    user_input = (data.get("user_input") or "").strip().lower()
+
+    if not user_input:
+        return jsonify({"error": "Missing user input"}), 400
+
+    question_flows = {
+        "csat": [
+            {"q": "Who is your target audience?", "options": ["New customers", "Existing customers", "All", "Other"]},
+            {"q": "Which part of the experience are you measuring?", "options": ["Product purchase", "Service quality", "Delivery", "Support", "Other"]},
+            {"q": "What is the main goal of this survey?", "options": ["Identify pain points", "Measure loyalty", "Track improvement", "Other"]},
+            {"q": "Would you like to include purpose and duration in your templates?", "options": ["Yes", "No"]}
+        ],
+        "nps": [
+            {"q": "Who are you targeting?", "options": ["Recent buyers", "Long-term users", "Trial users", "Other"]},
+            {"q": "What feedback area are you focusing on?", "options": ["Product", "Brand", "Overall service", "Other"]},
+            {"q": "How do you plan to use the results?", "options": ["Process improvement", "Retention", "Marketing", "Other"]},
+            {"q": "Would you like to include purpose and duration in your templates?", "options": ["Yes", "No"]}
+        ],
+        "default": [
+            {"q": "Who is your audience?", "options": ["Customers", "Employees", "Vendors", "Other"]},
+            {"q": "Which category fits best?", "options": ["Product", "Service", "Experience", "Performance", "Other"]},
+            {"q": "What is the primary purpose?", "options": ["Feedback", "Satisfaction", "Retention", "Other"]},
+            {"q": "Would you like to include purpose and duration in your templates?", "options": ["Yes", "No"]}
+        ]
+    }
+
+    # Determine flow
+    if "csat" in user_input:
+        flow = question_flows["csat"]
+    elif "nps" in user_input:
+        flow = question_flows["nps"]
+    else:
+        # AI fallback (for other survey types)
+        try:
+            prompt = f"""
+            You are an expert CX survey builder.
+            Based on this input: "{user_input}", generate 4 follow-up questions to clarify the intent.
+            Each question should have 3–4 answer options plus 'Other'.
+            The last question should always be:
+            "Would you like to include purpose and duration in your templates?" (Yes/No)
+            Return only JSON list like:
+            [
+              {{"q": "question text", "options": ["opt1","opt2","opt3","Other"]}}
+            ]
+            """
+
+            # ✅ Updated for new OpenAI API (since ChatCompletion is deprecated)
+            response = openai.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a professional survey designer."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.6,
+            )
+
+            ai_text = response.choices[0].message.content.strip()
+            json_like = re.search(r"\[.*\]", ai_text, flags=re.DOTALL)
+            flow = json.loads(json_like.group()) if json_like else question_flows["default"]
+
+        except Exception as e:
+            print("AI Flow Generation Error:", e)
+            flow = question_flows["default"]
+
+    return jsonify({"question_flow": flow})
+
+@app.route("/generate_survey", methods=["POST"])
+def generate_survey():
+    data = request.get_json() or {}
+    user_input = (data.get("user_input") or "").strip()
+    if not user_input:
+        return jsonify({"error": "Missing user_input"}), 400
+
+    prompt = f"""
+    You are a professional survey builder.
+    Create 4–5 professional survey templates for "{user_input}".
+    Each template must include:
+    - title
+    - purpose (1–2 lines summary of survey intent)
+    - duration (e.g., "3–5 mins", "Under 10 mins")
+    - 4–5 short questions
+    - each question must include its appropriate scale_type from:
+      ["number", "yesno", "5point", "text"]
+    The FIRST question must always start with:
+      "On a scale of 1–10, how satisfied are you..."
+    Return a valid JSON array only like:
+    [
+      {{
+        "title": "Template Title",
+        "purpose": "Purpose text",
+        "duration": "Duration text",
+        "questions": [
+          {{"question": "Q1 text", "scale_type": "number"}},
+          {{"question": "Q2 text", "scale_type": "yesno"}},
+          ...
+        ]
+      }}
+    ]
+    """
+
+    try:
+        resp = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7
+        )
+        text = resp.choices[0].message["content"]
+
+        # Extract JSON safely
+        json_like = re.search(r"\[.*\]", text, flags=re.DOTALL)
+        surveys = json.loads(json_like.group()) if json_like else []
+
+        # Fallback sanity fix
+        for s in surveys:
+            if not s.get("questions"):
+                s["questions"] = []
+            if not s.get("purpose"):
+                s["purpose"] = f"Understand customer opinions on {user_input}"
+            if not s.get("duration"):
+                s["duration"] = "5–7 mins"
+            first_q = s["questions"][0] if s["questions"] else {}
+            if "how satisfied" not in first_q.get("question", "").lower():
+                s["questions"].insert(0, {
+                    "question": f"On a scale of 1–10, how satisfied are you with {user_input}?",
+                    "scale_type": "number"
+                })
+
+    except Exception as e:
+        print("AI survey error:", e)
+        surveys = []
+
+    save_history({
+        "timestamp": datetime.now().isoformat(),
+        "input": user_input,
+        "surveys": surveys
+    })
+
+    return jsonify({
+        "surveys": surveys,
+        "follow_up": "Would you like to generate more templates or select one? (Generate More / Select Template)"
+    })
+
+
+
+
+
+# -----------------------
+# NEW LOGIC 1 — Handle 'Generate More'
+# -----------------------
+@app.route("/ask_focus_area", methods=["POST"])
+def ask_focus_area():
+    """Ask which aspect user wants more templates for."""
+    return jsonify({
+        "message": "Which specific aspect would you like to focus on for the new templates?"
+    })
+
+
+@app.route("/generate_more_surveys", methods=["POST"])
+def generate_more_surveys():
+    data = request.get_json()
+    focus_area = data.get("focus_area", "")
+    survey_type = data.get("survey_type", "")
+
+    if not focus_area:
+        return jsonify({"error": "Missing focus area"}), 400
+
+    # Example AI prompt
+    prompt = f"""
+    You are a professional survey designer.
+    Generate 3 new survey templates focused on "{focus_area}" related to "{survey_type}".
+    Each template should include:
+    - Title
+    - Purpose
+    - Duration
+    - 5 Questions (with scale type: number, yesno, 5point, or text)
+    Return strictly JSON in the format:
+    [
+      {{
+        "title": "Template Title",
+        "purpose": "Purpose text",
+        "duration": "Time estimate",
+        "questions": [
+          {{"question": "text", "scale_type": "number"}}
+        ]
+      }}
+    ]
+    """
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a CX survey generation expert."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.6
+        )
+        ai_text = response.choices[0].message["content"]
+        json_like = re.search(r"\[.*\]", ai_text, re.DOTALL)
+        templates = json.loads(json_like.group()) if json_like else []
+        return jsonify({"templates": templates})
+    except Exception as e:
+        print("Error generating more surveys:", e)
+        return jsonify({"error": str(e)}), 500
+
+# -----------------------
+# NEW LOGIC 2 — Handle 'Select Template'
+# -----------------------
+@app.route("/select_template", methods=["POST"])
+def select_template():
+    """Ask which template user wants to choose."""
+    data = request.get_json() or {}
+    templates = data.get("templates", [])
+    template_numbers = [f"Template {i+1}: {t['title']}" for i, t in enumerate(templates)]
+
+    return jsonify({
+        "message": "Please specify which template number you want to customize (e.g., Template 3).",
+        "available_templates": template_numbers,
+        "templates": templates  # return them for reference
+    })
+
+
+# -----------------------
+# CUSTOMIZE SELECTED TEMPLATE — preserves structure
+# -----------------------
+@app.route("/customize_selected_template", methods=["POST"])
+def customize_selected_template():
+    """After user chooses a template number, ask for scale type and question preferences."""
+    data = request.get_json() or {}
+    templates = data.get("templates", [])
+    choice = (data.get("choice") or "").lower()
+
+    try:
+        index = int(re.search(r"\d+", choice).group()) - 1
+        selected = templates[index]
+    except Exception:
+        return jsonify({"error": "Invalid template choice"}), 400
+
+    customization_qs = [
+        f"What type of rating scale would you prefer for '{selected['title']}'? (1–5, 1–10, Emoji, Star, Yes/No)",
+        "Would you like to adjust individual scale_types for specific questions?",
+        "Would you like to add or remove any questions from this template?"
+    ]
+
+    return jsonify({
+        "selected_template": selected,
+        "customization_questions": customization_qs
+    })
+
+
+# -----------------------
+# RUN
+# -----------------------
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>🧠 Smart Survey Creator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --accent:#4b7bec;
+      --bg: linear-gradient(180deg,#f4f8ff 0%,#f7fbff 100%);
+      --card:#ffffff;
+      --muted:#6b7280;
+      --option:#eef6ff;
+      --success:#22c55e;
+    }
+    html,body{height:100%;margin:0;font-family:Inter, "Poppins", system-ui, Arial;background:var(--bg);color:#0f172a}
+    .app{max-width:1200px;margin:22px auto;display:grid;grid-template-columns:1fr 420px;gap:18px;padding:12px}
+    header{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:var(--card);box-shadow:0 8px 30px rgba(15,23,42,0.06)}
+    .logo{width:46px;height:46px;border-radius:10px;background:linear-gradient(90deg,var(--accent),#2f66d6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700}
+    .title{font-size:18px;font-weight:700}
+    .subtitle{color:var(--muted);margin-left:auto;font-size:13px}
+    .left{background:var(--card);border-radius:12px;padding:14px;display:flex;flex-direction:column;box-shadow:0 6px 18px rgba(15,23,42,0.06)}
+    .chat{flex:1;overflow:auto;padding-bottom:8px}
+    .msg{max-width:86%;padding:12px 14px;border-radius:12px;margin:10px 0;line-height:1.4}
+    .bot{background:var(--option);align-self:flex-start;color:#0b2545}
+    .user{background:#e6fff1;align-self:flex-end;color:#05321a;text-align:right}
+    .controls{display:flex;gap:8px;padding-top:8px;align-items:center}
+    input[type=text]{flex:1;padding:10px;border-radius:12px;border:1px solid #e6eefc}
+    button.primary{background:var(--accent);color:#fff;border:none;padding:10px 14px;border-radius:10px;cursor:pointer}
+    .quick{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    .chip{background:#f0f6ff;border-radius:999px;padding:8px 12px;border:1px solid #e8f0ff;cursor:pointer;color:var(--accent)}
+/* right preview */
+    .right {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .preview-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #f1f6ff;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+
+    .template-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: auto;
+      padding-right: 6px;
+    }
+
+    .template-card {
+      border: 1px solid #eef4ff;
+      border-radius: 10px;
+      padding: 10px;
+      background: #fff;
+    }
+
+    .template-title {
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    .question-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 4px;
+      border-radius: 8px;
+      margin-top: 6px;
+      background: #fbfdff;
+      border: 1px solid #f0f6ff;
+    }
+
+    .small {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .options {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .option-btn {
+      background: #f4f8ff;
+      border: 1px solid #e8f2ff;
+      padding: 8px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    .option-btn:hover {
+      transform: translateY(-2px);
+    }
+
+    select.scale {
+      padding: 6px;
+      border-radius: 8px;
+      border: 1px solid #e6eefc;
+    }
+
+    /* ---------- Smaller, neater right-side buttons ---------- */
+    .actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      justify-content: flex-start;
+    }
+
+    .actions button {
+      font-size: 13px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      height: 34px;
+      min-width: 110px;
+      cursor: pointer;
+    }
+
+    .actions button.primary {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+    }
+
+    .btn-ghost {
+      background: #f9fbff;
+      border: 1px solid #e6eefc;
+      color: #374151;
+    }
+
+    .btn-ghost:hover {
+      background: #eef4ff;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .scale-change-input {
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid #e6eefc;
+      margin-right: 8px;
+    }
+
+    footer {
+      grid-column: 1 / -1;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 6px;
+    }
+
+    @media (max-width: 980px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+      .right {
+        order: 2;
+      }
+    }
+
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="logo">SS</div>
+      <div>
+        <div class="title">🧠 Smart Survey Creator</div>
+        <div class="small">AI-driven templates · one-by-one clarification · customizable</div>
+      </div>
+      <div class="subtitle">Hi Divya</div>
+    </header>
+
+    <!-- LEFT: Chat -->
+    <section class="left" aria-label="Chat">
+      <div id="chat" class="chat">
+        <div class="msg bot" id="welcome">
+          👋 Hi Divya! Let's create your survey.<br>
+          <span class="small">Choose a type below or type your own idea in the box.</span>
+        </div>
+        <div id="quick" class="quick" aria-hidden="false">
+          <div class="chip" data-value="Employee Feedback">🧑‍💼 Employee Feedback</div>
+          <div class="chip" data-value="Customer Satisfaction">🛍️ Customer Satisfaction</div>
+          <div class="chip" data-value="Website Feedback">🌐 Website Feedback</div>
+          <div class="chip" data-value="Product Experience">🏢 Product Experience</div>
+        </div>
+      </div>
+
+      <div class="controls" role="form" aria-label="Send message">
+        <input id="userInput" type="text" placeholder="Type survey type or reply..." />
+        <button class="primary" id="sendBtn">Send</button>
+        <button class="btn-ghost" id="restartBtn" title="Restart conversation">Restart</button>
+      </div>
+      <div class="muted" style="margin-top:8px">Tip: click chips for quick answers — flow will ask questions one-by-one.</div>
+    </section>
+
+    <!-- RIGHT: Preview -->
+    <aside class="right" aria-label="Preview">
+      <div class="preview-header">
+        <div style="font-weight:700">📋 Live Template Preview</div>
+        <div style="margin-left:auto" id="previewSubtitle" class="small">No templates yet</div>
+      </div>
+
+      <div id="templateList" class="template-list">
+        <div class="muted">Templates will appear here after clarification questions are answered.</div>
+      </div>
+
+      <div class="actions" id="finalActions">
+      <button class="primary" id="customizeBtn" disabled>Customize Selected</button>
+      <button class="btn-ghost" id="generateMoreBtn" disabled>Generate More</button>
+      <button class="btn-ghost" id="finalizeBtn">Finalize Template</button>
+      <button class="btn-ghost" id="downloadJsonBtn" disabled>Download JSON</button>
+      </div>
+
+    </aside>
+
+    <footer>Built for your SurveyCXM — flows call backend endpoints: <code>/generate_question_flow</code>, <code>/generate_survey</code>, <code>/ask_focus_area</code>, <code>/generate_more_surveys</code>, <code>/select_template</code>, <code>/customize_selected_template</code>.</footer>
+  </div>
+
+  <script>
+    // ---------- state ----------
+    const chatEl = document.getElementById('chat');
+    const quickEl = document.getElementById('quick');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const templateList = document.getElementById('templateList');
+    const previewSubtitle = document.getElementById('previewSubtitle');
+    const customizeBtn = document.getElementById('customizeBtn');
+    const generateMoreBtn = document.getElementById('generateMoreBtn');
+    const downloadJsonBtn = document.getElementById('downloadJsonBtn');
+    const finalizeBtn = document.getElementById('finalizeBtn');
+    const finalActions = document.getElementById('finalActions');
+
+    let questionFlow = [];          // [{text, options}]
+    let currentQuestionIndex = 0;
+    let collectedAnswers = {};      // questionText -> answer
+    let currentSurveyType = '';
+    let storedTemplates = [];       // templates from /generate_survey
+    let selectedTemplateIndex = -null;
+    let includePurposeDuration = true;
+    // ---------- helpers ----------
+    function appendMessageHTML(html, cls='bot'){
+      const d = document.createElement('div');
+      d.className = 'msg ' + cls;
+      d.innerHTML = html;
+      chatEl.appendChild(d);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function clearOptionsNodes(){
+      document.querySelectorAll('.msg.options-list').forEach(n=>n.remove());
+      document.querySelectorAll('.input-inline').forEach(n=>n.remove());
+    }
+
+    async function apiPost(path, payload){
+      try{
+        const res = await fetch(path, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(payload || {})
+        });
+        const json = await res.json();
+        return json;
+      }catch(e){
+        console.error('API error', e);
+        appendMessageHTML('⚠️ Network or server error — check console.', 'bot');
+        return { error: String(e) };
+      }
+    }
+
+    // ---------- initial quick chips ----------
+    quickEl.addEventListener('click', (ev)=>{
+      const chip = ev.target.closest('.chip');
+      if(!chip) return;
+      const val = chip.dataset.value;
+      if(val) startQuestionFlow(val);
+    });
+
+    // ---------- restart ----------
+    restartBtn.addEventListener('click', ()=>{
+      location.reload();
+    });
+
+    // ---------- start flow ----------
+    async function startQuestionFlow(type){
+      // reset
+      questionFlow = [];
+      currentQuestionIndex = 0;
+      collectedAnswers = {};
+      storedTemplates = [];
+      selectedTemplateIndex = -1;
+      currentSurveyType = type;
+      includePurposeDuration = true;
+      templateList.innerHTML = `<div class="muted">Waiting for AI clarifying questions...</div>`;
+      previewSubtitle.textContent = 'Asking clarifying questions...';
+
+      appendMessageHTML(`<b>📘 ${escapeHtml(type)}</b>`, 'user');
+      appendMessageHTML('🧠 Generating clarifying questions...', 'bot');
+
+      // backend expects key 'survey_idea' or 'user_input' or 'survey_type' - we try both safe
+      const flowResp = await apiPost('/generate_question_flow', { user_input: type, survey_type: type, survey_idea: type });
+
+      // Accept either {"questions":[{text,options}]} or {"question_flow":...}
+      questionFlow = [];
+      if(flowResp?.questions && Array.isArray(flowResp.questions)){
+        questionFlow = flowResp.questions;
+      } else if(flowResp?.question_flow && Array.isArray(flowResp.question_flow)){
+        questionFlow = flowResp.question_flow.map(q=>({text:q.q||q.question||q.qtext, options:q.options||q.opts||[]}));
+      } else if(flowResp?.error){
+        appendMessageHTML('⚠️ '+ escapeHtml(flowResp.error), 'bot');
+        return;
+      } else {
+        appendMessageHTML('⚠️ Could not parse question flow from server.', 'bot');
+        console.warn('flowResp', flowResp);
+        return;
+      }
+
+      // ask first question
+      currentQuestionIndex = 0;
+      appendMessageHTML('✅ Clarifying questions ready — answering one-by-one now.', 'bot');
+      askCurrentQuestion();
+    }
+
+    // ---------- ask question one-by-one ----------
+    function askCurrentQuestion(){
+      clearOptionsNodes();
+      if(currentQuestionIndex >= questionFlow.length){
+        // finished flow -> call generate_survey
+        appendMessageHTML('✅ All clarifying answers collected. Generating templates...', 'bot');
+        generateSurveyFromBackend();
+        return;
+      }
+
+      const q = questionFlow[currentQuestionIndex];
+      appendMessageHTML(`🧠 ${escapeHtml(q.text)}`, 'bot');
+
+      // render options (clickable) or inline text input
+      if(q.options && Array.isArray(q.options) && q.options.length){
+        const cont = document.createElement('div');
+        cont.className = 'msg options-list bot';
+        cont.style.padding = '8px';
+        const optsDiv = document.createElement('div');
+        optsDiv.className = 'options';
+        q.options.forEach(opt=>{
+          const b = document.createElement('button');
+          b.className = 'option-btn';
+          b.textContent = opt;
+          b.onclick = ()=>{ handleAnswer(opt); };
+          optsDiv.appendChild(b);
+        });
+        // add "Other" text input if not present
+        const otherInput = document.createElement('input');
+        otherInput.type = 'text';
+        otherInput.placeholder = 'Type your own answer...';
+        otherInput.style.marginTop = '8px';
+        otherInput.className = 'input-inline';
+        otherInput.onkeydown = (e)=>{
+          if(e.key === 'Enter' && otherInput.value.trim()){
+            handleAnswer(otherInput.value.trim());
+          }
+        };
+        cont.appendChild(optsDiv);
+        cont.appendChild(otherInput);
+        chatEl.appendChild(cont);
+        chatEl.scrollTop = chatEl.scrollHeight;
+      } else {
+        // plain text input
+        const inline = document.createElement('div');
+        inline.className = 'msg input-inline bot';
+        inline.style.display = 'flex';
+        inline.style.gap = '8px';
+        inline.innerHTML = `<input id="inlineResp" type="text" placeholder="Type your answer and press Enter" style="flex:1;padding:8px;border-radius:8px;border:1px solid #e6eefc">`;
+        chatEl.appendChild(inline);
+        setTimeout(()=> {
+          const el = document.getElementById('inlineResp');
+          if(el) el.focus();
+          el.addEventListener('keydown', (e)=>{
+            if(e.key === 'Enter' && el.value.trim()){
+              handleAnswer(el.value.trim());
+            }
+          });
+        },50);
+        chatEl.scrollTop = chatEl.scrollHeight;
+      }
+    }
+
+    // ---------- handle answer ----------
+    function handleAnswer(ans){
+      // store answer
+      const q = questionFlow[currentQuestionIndex];
+      collectedAnswers[q.text] = ans;
+      appendMessageHTML(escapeHtml(ans), 'user');
+      currentQuestionIndex++;
+
+      // if the question was the include purpose/duration check, record it
+      if(/purpose and duration/i.test(q.text || '')){
+        includePurposeDuration = /yes/i.test(String(ans));
+      }
+
+      // next question with small delay for UX
+      setTimeout(askCurrentQuestion, 450);
+    }
+
+    // ---------- generate survey ----------
+    async function generateSurveyFromBackend(){
+      // call /generate_survey with user_input (type) and answers to help prompt if needed
+      appendMessageHTML('✨ Contacting AI to build templates...', 'bot');
+      const payload = { user_input: currentSurveyType, answers: collectedAnswers };
+      const resp = await apiPost('/generate_survey', payload);
+      if(resp?.surveys && Array.isArray(resp.surveys) && resp.surveys.length){
+        storedTemplates = resp.surveys.map(s=>normalizeTemplate(s));
+        renderTemplatesList();
+        appendMessageHTML('✅ Templates ready — pick one to customize or click Generate More.', 'bot');
+        previewSubtitle.textContent = `${storedTemplates.length} templates`;
+        // enable buttons
+        generateMoreBtn.disabled = false;
+      } else {
+        appendMessageHTML('⚠️ No templates returned. Try again or change input.', 'bot');
+        console.warn('generate_survey resp', resp);
+      }
+    }
+
+    // normalize to consistent shape
+    function normalizeTemplate(s){
+      return {
+        title: s.title || s.name || 'Untitled Template',
+        purpose: s.purpose || '',
+        duration: s.duration || '',
+        questions: (s.questions || []).map(q=>{
+          // backend uses {question, scale_type} or {text, scale_type}
+          return {
+            question: q.question || q.text || q.q || 'Question',
+            scale_type: q.scale_type || q.scale || 'text'
+          };
+        })
+      };
+    }
+
+        // ---------- render templates in right panel & chat -->
+
+
+    // ---------- render templates in right panel & chat ----------
+    function renderTemplatesList() {
+      templateList.innerHTML = '';
+      storedTemplates.forEach((t, i) => {
+        const card = document.createElement('div');
+        card.className = 'template-card';
+        const purposeHtml = includePurposeDuration
+          ? `<div class="small"><b>Purpose:</b> ${escapeHtml(t.purpose || '—')}</div>
+            <div class="small"><b>Duration:</b> ${escapeHtml(t.duration || '—')}</div>`
+          : '';
+
+        card.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div class="template-title">📋 ${escapeHtml(t.title)}</div>
+            <div style="display:flex;gap:8px">
+              <button class="btn-ghost" data-action="preview" data-i="${i}">Preview</button>
+              <button class="option-btn" data-action="select" data-i="${i}">Select</button>
+            </div>
+          </div>
+          ${purposeHtml}
+          <div style="margin-top:8px">
+            ${t.questions.map((q, qi) => `
+              <div class="question-row">
+                <div style="flex:1">${escapeHtml(q.question)}</div>
+                <div style="margin-left:12px">
+                  ${renderScaleSelectHtml(q.scale_type, q.question, i, qi)}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+        templateList.appendChild(card);
+      });
+
+      // wire preview button
+      templateList.querySelectorAll('button[data-action="preview"]').forEach(b => {
+        b.addEventListener('click', () => {
+          const idx = Number(b.dataset.i);
+          showTemplatePreview(idx);
+        });
+      });
+
+      // wire select button
+      templateList.querySelectorAll('button[data-action="select"]').forEach(b => {
+        b.addEventListener('click', () => {
+          const idx = Number(b.dataset.i);
+          selectTemplate(idx);
+        });
+      });
+
+      // update storedTemplates on scale type change
+      templateList.querySelectorAll('select.scale').forEach(sel => {
+        sel.addEventListener('change', () => {
+          const t = Number(sel.dataset.t);
+          const q = Number(sel.dataset.q);
+          const val = sel.value;
+          if (storedTemplates[t] && storedTemplates[t].questions[q]) {
+            storedTemplates[t].questions[q].scale_type = val;
+          }
+          if (selectedTemplateIndex === t) updatePreviewPanel(t);
+        });
+      });
+
+      // enable action buttons
+      downloadJsonBtn.disabled = false;
+      customizeBtn.disabled = false;
+    }
+
+    // Build a select element HTML for a given question (returns markup string)
+    // Build a select element HTML for a given question (returns markup string)
+    function renderScaleSelectHtml(currentValue, questionText, templateIndex, questionIndex) {
+      // produce options relevant to questionText + ensure current included
+      const choices = getRelevantScaleTypes(questionText); // labels: "Yes/No","0–5",...
+      
+      // ensure current mapped label is available; convert currentValue code to label for selecting
+      const currentLabel = scaleValueToLabel(currentValue);
+      if (currentLabel && !choices.includes(currentLabel)) {
+        choices.unshift(currentLabel);
+      }
+
+      // build option tags with value as normalized code
+      const optionsHtml = choices.map(label => {
+        const val = scaleLabelToValue(label);
+        const selected = (String(val) === String(currentValue)) ? 'selected' : '';
+        return `<option value="${val}" ${selected}>${label}</option>`;
+      }).join('');
+
+      // data-t and data-q for wiring listeners later
+      return `<select class="scale" data-t="${templateIndex}" data-q="${questionIndex}">${optionsHtml}</select>`;
+    }
+
+    // Map human label -> internal select value
+    function scaleLabelToValue(label) {
+      const l = String(label).toLowerCase();
+      if (l.includes('yes')) return 'yesno';
+      if (l.includes('0–5') || l.includes('0-5') || l === '0–5' || l === '0-5') return '5point';
+      if (l.includes('0–10') || l.includes('0-10') || l === '0–10' || l === '0-10') return 'number';
+      if (l.includes('star')) return 'Star';
+      if (l.includes('emoji')) return 'Emoji';
+      if (l.includes('text')) return 'text';
+      // fallback
+      switch (label) {
+        case '5point': return '5point';
+        case 'number': return 'number';
+        case 'yesno': return 'yesno';
+        default: return 'text';
+      }
+    }
+
+    // Map internal value -> readable label
+    function scaleValueToLabel(value) {
+      const v = String(value).toLowerCase();
+      if (v === 'yesno') return 'Yes/No';
+      if (v === '5point') return '0–5';
+      if (v === 'number') return '0–10';
+      if (v === 'star') return 'Star';
+      if (v === 'emoji') return 'Emoji';
+      if (v === 'text') return 'Text';
+      // fallbacks
+      if (v.includes('0') && v.includes('5')) return '0–5';
+      if (v.includes('0') && v.includes('10')) return '0–10';
+      return value;
+    }
+
+    // Build fallback select options (rarely used)
+    function renderScaleOptions(current) {
+      const choices = ['number', '5point', 'yesno', 'text', 'Emoji', 'Star', '0–10', '0–5'];
+      return choices
+        .map(c => `<option value="${c}" ${String(c) === String(current) ? 'selected' : ''}>${c}</option>`)
+        .join('');
+    }
+
+    function showTemplatePreview(idx){
+      selectedTemplateIndex = idx;
+      updatePreviewPanel(idx);
+      appendMessageHTML(`<i>Previewed template ${idx+1}</i>`, 'bot');
+    }
+
+    function updatePreviewPanel(idx){
+      const t = storedTemplates[idx];
+      if(!t) return;
+      // show live preview in right panel
+      const container = document.createElement('div');
+      container.className = 'template-card';
+      container.innerHTML = `<div class="template-title">${escapeHtml(t.title)}</div>
+        ${ includePurposeDuration ? `<div class="small"><b>Purpose:</b> ${escapeHtml(t.purpose || '—')}</div>
+         <div class="small"><b>Duration:</b> ${escapeHtml(t.duration || '—')}</div>` : ''}
+        <div style="margin-top:8px">${t.questions.map((q,qi)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0">
+          <div>${escapeHtml(q.question)}</div>
+          <div>${renderScaleSelectHtml(q.scale_type, q.question, idx, qi)}</div>
+        </div>`).join('')}</div>`;
+      // insert at top
+      const previewArea = document.getElementById('templateList');
+      previewArea.insertBefore(container, previewArea.firstChild);
+      // wire select inside preview selects
+      container.querySelectorAll('select.scale').forEach(sel=>{
+        sel.addEventListener('change', ()=>{
+          const tindex = Number(sel.dataset.t);
+          const qindex = Number(sel.dataset.q);
+          storedTemplates[tindex].questions[qindex].scale_type = sel.value;
+          // also update list selects
+          templateList.querySelectorAll(`select.scale[data-t="${tindex}"][data-q="${qindex}"]`).forEach(s=>s.value = sel.value);
+        });
+      });
+      previewSubtitle.textContent = `Previewing: ${t.title}`;
+    }
+
+    function selectTemplate(idx) {
+      selectedTemplateIndex = idx;
+      const chosen = storedTemplates[idx];
+
+      // ✅ Chat confirmation
+      appendMessageHTML(`✅ Selected <b>${escapeHtml(chosen.title)}</b> — starting customization.`, "bot");
+
+      // ✅ Show preview
+      updatePreviewPanel(idx);
+
+      // ✅ Start customization flow
+      customizeSelectedTemplateBackend(idx);
+
+      // ✅ Show action buttons (but don't finalize yet)
+      const actionsEl = document.getElementById("finalActions");
+      if (actionsEl) actionsEl.style.display = "flex";
+
+      // ✅ Enable relevant buttons
+      document.getElementById("downloadJsonBtn").disabled = true;
+      document.getElementById("finalizeBtn").disabled = false;
+    }
+
+
+    // ---------- customize selected template (call backend to get questions) ----------
+    async function customizeSelectedTemplateBackend(idx){
+      const payload = { templates: storedTemplates, choice: `Template ${idx+1}` };
+      const resp = await apiPost('/customize_selected_template', payload);
+
+      if(resp?.error){
+        appendMessageHTML('⚠️ ' + escapeHtml(resp.error), 'bot');
+        return;
+      }
+      const custQs = resp.customization_questions || resp.customization_questions || [];
+      const selected = resp.selected_template || storedTemplates[idx];
+      // If backend returned selected_template, update storedTemplates[idx]
+      storedTemplates[idx] = normalizeTemplate(selected);
+
+      // Start client side sequential customization using returned questions
+      runCustomizationFlow(idx, custQs);
+    }
+
+ // Run customization questions one-by-one (supports options and free text)
+// ---------------- CUSTOMIZATION FLOW ----------------
+
+    async function runCustomizationFlow(idx, custQs) {
+      if (!Array.isArray(custQs) || custQs.length === 0) {
+        appendMessageHTML("⚠️ No customization questions provided by server.", "bot");
+        return;
+      }
+
+      appendMessageHTML(`🛠️ Customization started for <b>${escapeHtml(storedTemplates[idx].title)}</b>`, "bot");
+
+      let step = 0;
+      const answers = {};
+
+      async function askStep() {
+        if (step >= custQs.length) {
+          await callCustomizeAPI();
+          return;
+        }
+
+        const q = custQs[step];
+        appendMessageHTML(`🧩 ${escapeHtml(q.question)}`, "bot");
+
+        const cont = document.createElement("div");
+        cont.className = "msg options-list bot";
+        cont.style.padding = "8px";
+
+        // Options
+        if (q.options && q.options.length) {
+          const optsDiv = document.createElement("div");
+          optsDiv.className = "options";
+          q.options.forEach((opt) => {
+            const b = document.createElement("button");
+            b.className = "option-btn";
+            b.textContent = opt;
+            b.onclick = () => {
+              answers[q.question] = opt;
+              appendMessageHTML(escapeHtml(opt), "user");
+              cont.remove();
+              step++;
+              setTimeout(askStep, 400);
+            };
+            optsDiv.appendChild(b);
+          });
+          cont.appendChild(optsDiv);
+        }
+
+        // Text input
+        if (q.allow_text_input) {
+          const input = document.createElement("input");
+          input.type = "text";
+          input.placeholder = "Type your answer and press Enter...";
+          input.style.marginTop = "8px";
+          input.onkeydown = (e) => {
+            if (e.key === "Enter" && input.value.trim()) {
+              answers[q.question] = input.value.trim();
+              appendMessageHTML(escapeHtml(input.value.trim()), "user");
+              cont.remove();
+              step++;
+              setTimeout(askStep, 400);
+            }
+          };
+          cont.appendChild(input);
+        }
+
+        chatEl.appendChild(cont);
+        chatEl.scrollTop = chatEl.scrollHeight;
+      }
+
+      // ---------- SECOND STAGE CALL ----------
+      async function callCustomizeAPI() {
+        appendMessageHTML("✨ Applying your customization choices...", "bot");
+
+        const payload = {
+          templates: storedTemplates,
+          choice: `Template ${idx + 1}`,
+          ...applyCustomizationAnswers(answers),
+        };
+
+        try {
+          const res = await fetch("/customize_selected_template", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+
+          if (data.selected_template) {
+            storedTemplates[idx] = normalizeTemplate(data.selected_template);
+            renderTemplatesList();
+            updatePreviewPanel(idx);
+          }
+
+          appendMessageHTML("✅ AI-based customization applied successfully.", "bot");
+
+          // ✅ Now handle next-step customization (scale types)
+          if (data.customization_questions && data.customization_questions.length > 0) {
+            const nextQs = data.customization_questions;
+            const scaleQ = nextQs.find((q) =>
+              q.question.toLowerCase().includes("scale_types")
+            );
+
+            if (scaleQ) {
+              appendMessageHTML(`🧩 ${escapeHtml(scaleQ.question)}`, "bot");
+
+              const optsDiv = document.createElement("div");
+              optsDiv.className = "msg options-list bot";
+
+              scaleQ.options.forEach((opt) => {
+                const btn = document.createElement("button");
+                btn.className = "option-btn";
+                btn.textContent = opt;
+                btn.onclick = async () => {
+                  appendMessageHTML(opt, "user");
+                  optsDiv.remove();
+
+                  if (opt.toLowerCase() === "yes") {
+                    appendMessageHTML(
+                      "📝 Please specify which questions you'd like to change the scale type for (e.g., Q2, Q4 or keywords):",
+                      "bot"
+                    );
+
+                    const wrapper = document.createElement("div");
+                    wrapper.className = "msg input-inline bot";
+                    wrapper.style.display = "flex";
+                    wrapper.style.gap = "8px";
+
+                    const input = document.createElement("input");
+                    input.type = "text";
+                    input.placeholder = "Type question numbers or keywords...";
+                    const submit = document.createElement("button");
+                    submit.className = "option-btn";
+                    submit.textContent = "Submit";
+                    wrapper.appendChild(input);
+                    wrapper.appendChild(submit);
+                    chatEl.appendChild(wrapper);
+
+                    submit.onclick = () => {
+                      const val = input.value.trim();
+                      if (!val) return;
+                      appendMessageHTML(escapeHtml(val), "user");
+                      wrapper.remove();
+
+                      const matched = findQuestionIndicesFromInput(val, idx);
+                      if (matched.length === 0) {
+                        appendMessageHTML(
+                          "⚠️ Couldn't find matching questions. Try Q1 or keywords.",
+                          "bot"
+                        );
+                        return;
+                      }
+
+                      showScalePickersForQuestions(idx, matched, () => {
+                        appendMessageHTML(
+                          "✅ Updated selected questions with new scale types.",
+                          "bot"
+                        );
+                      });
+                    };
+
+                    input.addEventListener("keydown", (e) => {
+                      if (e.key === "Enter") submit.click();
+                    });
+                  } else {
+                    appendMessageHTML("✅ No scale-type changes selected.", "bot");
+                    appendMessageHTML("🎯 Customization process completed successfully.", "bot");
+                  }
+                };
+                optsDiv.appendChild(btn);
+              });
+
+              chatEl.appendChild(optsDiv);
+              chatEl.scrollTop = chatEl.scrollHeight;
+            }
+          } else {
+            appendMessageHTML("🎯 Customization process completed successfully.", "bot");
+          }
+        } catch (err) {
+          appendMessageHTML("⚠️ Failed to apply customization: " + err.message, "bot");
+          console.error(err);
+        }
+      }
+
+      askStep();
+    }
+
+
+    // ---------- HANDLE USER CHOICE ----------
+    async function handleUserChoice(choice, currentQuestionText, idx, answers, continueCallback, cont) {
+      appendMessageHTML(escapeHtml(choice), 'user');
+
+      // Special case: user wants to adjust individual scale types
+      if (/adjust individual scale_types/i.test(currentQuestionText) && /^yes$/i.test(choice)) {
+        appendMessageHTML("📝 Please specify which questions you'd like to change the scale type for (e.g., Q2, Q4 or keywords):", "bot");
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'msg input-inline bot';
+        wrapper.style.display = 'flex';
+        wrapper.style.gap = '8px';
+        wrapper.style.alignItems = 'center';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Type question numbers (Q1,Q2) or keywords...';
+        input.className = 'scale-change-input';
+
+        const submitBtn = document.createElement('button');
+        submitBtn.className = 'option-btn';
+        submitBtn.textContent = 'Submit';
+
+        wrapper.appendChild(input);
+        wrapper.appendChild(submitBtn);
+        chatEl.appendChild(wrapper);
+        chatEl.scrollTop = chatEl.scrollHeight;
+
+        submitBtn.onclick = () => {
+          const text = input.value.trim();
+          if (!text) return;
+          appendMessageHTML(escapeHtml(text), 'user');
+          wrapper.remove();
+
+          const matchedIndices = findQuestionIndicesFromInput(text, idx);
+          if (matchedIndices.length === 0) {
+            appendMessageHTML("⚠️ Couldn't find matching questions. Try using question numbers like Q2 or keywords.", "bot");
+            setTimeout(() => handleUserChoice(choice, currentQuestionText, idx, answers, continueCallback, cont), 400);
+            return;
+          }
+
+          // Show dropdowns for each matched question
+          showScalePickersForQuestions(idx, matchedIndices, () => {
+            appendMessageHTML('✅ Updated selected questions with new scale types.', 'bot');
+            if (cont && cont.remove) cont.remove();
+            continueCallback();
+          });
+        };
+
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') submitBtn.click();
+        });
+
+        return; // stop until user submits
+      }
+
+      // Regular case
+      answers[currentQuestionText] = choice;
+      if (cont && cont.remove) cont.remove();
+      continueCallback();
+    }
+
+    function findQuestionIndicesFromInput(inputText, templateIdx) {
+      const questions = storedTemplates[templateIdx]?.questions || [];
+      const matches = [];
+      const parts = inputText.split(/[,\s]+/).map((p) => p.trim().toLowerCase()).filter(Boolean);
+
+      questions.forEach((q, i) => {
+        const qNum = `q${i + 1}`;
+        if (parts.includes(qNum.toLowerCase()) || parts.some((word) => q.question.toLowerCase().includes(word))) {
+          matches.push(i);
+        }
+      });
+
+      return matches;
+    }
+
+        // ---------- SCALE PICKER UI ----------
+    function showScalePickersForQuestions(templateIdx, indices, onDone) {
+      const scales = ["0–5 Scale", "0–10 Scale", "Yes/No", "Star","Emoji","text"];
+      appendMessageHTML("🎚️ Choose new scale types for selected questions:", "bot");
+
+      indices.forEach((i) => {
+        const q = storedTemplates[templateIdx].questions[i];
+        const wrapper = document.createElement("div");
+        wrapper.className = "msg options-list bot";
+        wrapper.style.padding = "6px 8px";
+        wrapper.innerHTML = `<b>Q${i + 1}:</b> ${escapeHtml(q.question)}`;
+
+        const select = document.createElement("select");
+        scales.forEach((s) => {
+          const opt = document.createElement("option");
+          opt.value = s;
+          opt.textContent = s;
+          select.appendChild(opt);
+        });
+
+        select.onchange = () => {
+          storedTemplates[templateIdx].questions[i].scale_type = select.value;
+        };
+
+        wrapper.appendChild(select);
+        chatEl.appendChild(wrapper);
+      });
+
+      const doneBtn = document.createElement("button");
+      doneBtn.textContent = "Done";
+      doneBtn.className = "option-btn";
+      doneBtn.onclick = () => {
+        renderTemplatesList();
+        updatePreviewPanel(templateIdx);
+        if (onDone) onDone();
+      };
+      chatEl.appendChild(doneBtn);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function applyCustomizationAnswers(answers) {
+      // This function maps user responses from the customization Q&A flow
+      // into a structured payload for the backend /customize_selected_template API.
+
+      // Normalize and safely access values
+      const action = (answers["Would you like to add or remove any questions from this template?"] || "").toLowerCase();
+      const focusArea =
+        answers[
+          "Would you like to add questions related to any specific focus area? (e.g., Website design, Product quality, Service experience)"
+        ] || "";
+      const complexity = answers["What complexity level of questions do you prefer in this survey?"] || "";
+      const scaleAction = (answers["Would you like to adjust individual scale_types for specific questions?"] || "").toLowerCase();
+      const scaleChanges = answers["Which questions do you want to change scale type for? (e.g., Q1, Q3 or keywords)"] || "";
+      const removeInput = answers["Would you like to remove any questions? If yes, please specify (e.g., Q2, Q4)"] || "";
+
+      // Return clean object for backend
+      return {
+        action,
+        focus_area: focusArea,
+        complexity,
+        scale_action: scaleAction,
+        scale_changes: scaleChanges,
+        remove_input: removeInput,
+      };
+    }
+
+
+    // // utility: map label -> internal code and vice versa exist above (scaleLabelToValue, scaleValueToLabel)
+    // function mapScalePref(v){
+    //   v = String(v).toLowerCase();
+    //   if(v.includes('1–5') || v.includes('1-5') || v.includes('5')) return '5point';
+    //   if(v.includes('1–10') || v.includes('1-10') || v.includes('10')) return 'number';
+    //   if(v.includes('yes')) return 'yesno';
+    //   if(v.includes('emoji')) return 'Emoji';
+    //   if(v.includes('star')) return 'Star';
+    //   return 'text';
+    // }
+
+    // 🧠 Function to get relevant scale options based on question text
+    function getRelevantScaleTypes(questionText) {
+      const q = questionText.toLowerCase();
+
+      if (q.includes("yes") || q.includes("no") || q.includes("did you") || q.includes("have you")) {
+        return ["Yes", "No"];
+      } else if (q.includes("rate") || q.includes("satisfied") || q.includes("how likely") || q.includes("score")) {
+        return ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+      } else if (q.includes("improve") || q.includes("suggest") || q.includes("what") || q.includes("why")) {
+        return ["(text box for response)"];
+      } else {
+        return ["1", "2", "3", "4", "5"];
+      }
+    }
+
+    // 🔄 Helper: convert user’s scale preference keywords into standard type
+    function mapScalePref(v) {
+      v = String(v).toLowerCase();
+      if (v.includes('1–5') || v.includes('1-5') || v.includes('5')) return '1–5';
+      if (v.includes('1–10') || v.includes('1-10') || v.includes('10')) return '1–10';
+      if (v.includes('yes')) return 'Yes/No';
+      if (v.includes('emoji')) return 'Emoji';
+      if (v.includes('star')) return 'Star';
+      return 'Text';
+    }
+
+    // 🎨 Render each question with its appropriate dropdown in right preview
+    function renderQuestionWithScaleDropdown(q, qIndex, templateIndex) {
+      let options = [];
+      
+      if (q.scale_type === '1–10' || q.scale_type === 'number') {
+        options = Array.from({ length: 10 }, (_, i) => i + 1);
+      } else if (q.scale_type === '1–5' || q.scale_type === '5point') {
+        options = Array.from({ length: 5 }, (_, i) => i + 1);
+      } else if (q.scale_type === 'Yes/No' || q.scale_type === 'yesno') {
+        options = ['Yes', 'No'];
+      } else {
+        options = ['(Text Response)'];
+      }
+
+      const dropdown = `
+        <select onchange="updateQuestionScale(${templateIndex}, ${qIndex}, this.value)">
+          ${options.map(o => `<option value="${o}">${o}</option>`).join("")}
+        </select>`;
+
+      return `<div style="margin:8px 0;">• ${q.text} ${dropdown}</div>`;
+    }
+
+    // 🧩 Update the preview area dynamically
+    function updatePreview(template, templateIndex = 0) {
+      const html = `
+        <div class='template-card'>
+          <div class='template-title'>${template.title}</div>
+          ${template.questions.map((q, i) => renderQuestionWithScaleDropdown(q, i, templateIndex)).join('')}
+        </div>`;
+      preview.innerHTML = html;
+    }
+
+        // ⚙️ When user changes dropdown scale → update that question’s scale type
+    function updateQuestionScale(templateIndex, questionIndex, newValue) {
+      const template = storedTemplates[templateIndex];
+      if (!template || !template.questions[questionIndex]) return;
+
+      // Directly assign the label type selected by user
+      const lower = newValue.toLowerCase();
+
+      if (lower.includes('0–5') || lower.includes('0-5')) template.questions[questionIndex].scale_type = '0–5';
+      else if (lower.includes('0–10') || lower.includes('0-10')) template.questions[questionIndex].scale_type = '0–10';
+      else if (lower.includes('yes')) template.questions[questionIndex].scale_type = 'Yes/No';
+      else if (lower.includes('text')) template.questions[questionIndex].scale_type = 'Text';
+      else if (lower.includes('star')) template.questions[questionIndex].scale_type = 'Star';
+      else if (lower.includes('emoji')) template.questions[questionIndex].scale_type = 'Emoji';
+      else template.questions[questionIndex].scale_type = newValue;
+
+      renderTemplatesList();
+      updatePreviewPanel(templateIndex);
+    }
+
+    // ---------- Generate More flow ----------
+    generateMoreBtn.addEventListener('click', async ()=>{
+      appendMessageHTML('🧾 Which focus area would you like more templates for? (e.g., design, usability)', 'bot');
+      // add inline input
+      const inline = document.createElement('div');
+      inline.className = 'msg input-inline bot';
+      inline.innerHTML = `<input id="moreFocus" placeholder="Type a focus area and press Enter">`;
+      chatEl.appendChild(inline);
+      setTimeout(()=> {
+        const el = document.getElementById('moreFocus');
+        el.focus();
+        el.addEventListener('keydown', async (e)=>{
+          if(e.key==='Enter' && el.value.trim()){
+            const area = el.value.trim();
+            appendMessageHTML(escapeHtml(area), 'user');
+            inline.remove();
+            appendMessageHTML('✨ Generating more templates for: '+escapeHtml(area), 'bot');
+            const res = await apiPost('/generate_more_surveys', { focus_area: area, survey_type: currentSurveyType });
+            if(res?.templates && res.templates.length){
+              const newTemplates = res.templates.map(normalizeTemplate);
+              storedTemplates = storedTemplates.concat(newTemplates);
+              renderTemplatesList();
+              appendMessageHTML('✅ Added new templates to the list.', 'bot');
+              previewSubtitle.textContent = `${storedTemplates.length} templates`;
+            } else {
+              appendMessageHTML('⚠️ No additional templates returned.', 'bot');
+            }
+          }
+        });
+      },50);
+    });
+
+    // ✅ FINALIZE TEMPLATE BUTTON HANDLER
+    // ✅ FINALIZE TEMPLATE BUTTON HANDLER
+    document.getElementById("finalizeBtn").addEventListener("click", async () => {
+      if (selectedTemplateIndex === null || !storedTemplates[selectedTemplateIndex]) {
+        appendMessageHTML("⚠️ Please select a template first.", "bot");
+        return;
+      }
+
+      const chosen = storedTemplates[selectedTemplateIndex];
+      appendMessageHTML(`🧩 Finalizing <b>${escapeHtml(chosen.title)}</b>...`, "bot");
+
+      const response = await fetch("/finalize_template", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ final_template: chosen }), // ✅ correct key
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        appendMessageHTML(`🎉 <b>${escapeHtml(chosen.title)}</b> finalized and saved successfully!`, "bot");
+
+        // ✅ Update right-side preview with finalized template
+        const previewContainer = document.querySelector(".right");
+        previewContainer.innerHTML = `
+          <div class="preview-header">
+            <h3>📋 Finalized Template Preview</h3>
+          </div>
+          <div class="template-card">
+            <div class="template-title">${escapeHtml(chosen.title)}</div>
+            <p class="small">Scale Type: ${chosen.scale_type || "N/A"}</p>
+            <p class="muted">✅ Finalized Template (ID: ${result.template_id})</p>
+            <div class="question-section">
+              ${chosen.questions
+                ?.map(
+                  (q, i) => `
+                    <div class="question-row">
+                      <div>${i + 1}. ${escapeHtml(q.question || q)}</div>
+                      ${
+                        q.scale_type
+                          ? `<span class="small">(${q.scale_type})</span>`
+                          : ""
+                      }
+                    </div>`
+                )
+                .join("") || "<p>No questions found.</p>"}
+            </div>
+          </div>
+        `;
+
+        // ✅ Enable JSON download
+        document.getElementById("downloadJsonBtn").disabled = false;
+      } else {
+        appendMessageHTML("❌ Failed to finalize template. Please try again.", "bot");
+      }
+    });
+
+
+
+    // ✅ DOWNLOAD FINALIZED JSON
+    document.getElementById("downloadJsonBtn").addEventListener("click", () => {
+      if (selectedTemplateIndex === null || !storedTemplates[selectedTemplateIndex]) {
+        appendMessageHTML("⚠️ Please finalize a template first.", "bot");
+        return;
+      }
+      const chosen = storedTemplates[selectedTemplateIndex];
+      const blob = new Blob([JSON.stringify(chosen, null, 2)], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${chosen.title.replace(/\s+/g, "_")}.json`;
+      link.click();
+    });
+
+    // ---------- utility ----------
+    function escapeHtml(s){ if(!s && s!==0) return ''; return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+    // ---------- wire send box ----------
+    sendBtn.disabled = true;
+    sendBtn.addEventListener('click', ()=>{
+      const txt = userInput.value.trim();
+      if(!txt) return;
+      userInput.value = '';
+      // If there is an active question expecting inline input (input-inline present) — treat as answer
+      const hasInline = document.querySelector('.msg.input-inline');
+      if(hasInline){
+        // find the input inside and set value and dispatch Enter
+        const inlineInput = hasInline.querySelector('input');
+        if(inlineInput){
+          inlineInput.value = txt;
+          // trigger Enter handler
+          const ev = new KeyboardEvent('keydown',{key:'Enter'});
+          inlineInput.dispatchEvent(ev);
+          return;
+        }
+      }
+      // otherwise treat as survey type starter
+      startQuestionFlow(txt);
+    });
+
+    userInput.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter') sendBtn.click();
+    });
+    
+    // ---------- allow clicking on template scale selects to update preview too ----------
+    // handled on renderTemplatesList & updatePreviewPanel (they add listeners when generating selects)
+
+    // ---------- initial focus ----------
+    userInput.focus();
+  </script>
+</body>
+</html>

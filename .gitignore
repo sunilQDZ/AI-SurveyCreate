@@ -1,0 +1,17 @@
+# Environments
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# Output Data / Temp files
+finalized_templates/
+saved_surveys.json
+responses.json
+test_payload*.json
+test_apis.ps1

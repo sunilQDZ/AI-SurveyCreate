@@ -1,0 +1,978 @@
+{
+  "E-commerce": {
+    "NPS": [
+      {
+        "survey_title": "E-commerce NPS Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "On a scale of 0–10, how likely are you to recommend our online store to your friends or family?",
+            "scale": "0–10 Rating Scale",
+            "purpose": "To measure overall loyalty and referral likelihood."
+          },
+          {
+            "question": "Would you recommend our e-commerce site to others after your recent purchase?",
+            "scale": "(Yes/No)",
+            "purpose": "To identify promoters vs. non-promoters quickly."
+          },
+          {
+            "question": "How likely are you to suggest our website/app to others for future purchases?",
+            "scale": "0–10 Rating Scale",
+            "purpose": "To understand if user experience drives advocacy."
+          },
+          {
+            "question": "On a scale of 0–10, how likely are you to recommend our customer service to others?",
+            "scale": "0–10 Rating Scale",
+            "purpose": "To measure how support experience influences loyalty."
+          },
+          {
+            "question": "What is the main reason behind your score?",
+            "scale": "Open Text",
+            "purpose": "To understand motivations or barriers behind NPS rating."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "CSAT": [
+      {
+        "survey_title": "E-commerce CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with your recent purchase from our store?",
+            "scale": "5-point Scale (Very Dissatisfied → Very Satisfied)",
+            "purpose": "To measure satisfaction with the overall buying experience."
+          },
+          {
+            "question": "Are you satisfied with the delivery time of your order?",
+            "scale": "(Yes/No)",
+            "purpose": "To assess fulfillment speed satisfaction."
+          },
+          {
+            "question": "How satisfied are you with the product quality received?",
+            "scale": "5-point Scale (Very Dissatisfied → Very Satisfied)",
+            "purpose": "To check product performance against expectations."
+          },
+          {
+            "question": "How well did our website/app help you find what you were looking for?",
+            "scale": "5-point Scale (Very Dissatisfied → Very Satisfied)",
+            "purpose": "To evaluate ease of navigation and search experience."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "How satisfied are you with our customer service or return process?": [
+      {
+        "survey_title": "E-commerce How satisfied are you with our customer service or return process? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "What could we improve to make your shopping experience better?",
+            "scale": "Open Text",
+            "purpose": "To gather qualitative feedback for CX improvement."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "NPS and CSAT": [
+      {
+        "survey_title": "E-commerce NPS and CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "On a scale of 0–10, how likely are you to recommend our online store to friends or family?",
+            "scale": "0–10 (NPS Scale)",
+            "purpose": "To assess customer loyalty and referral likelihood."
+          },
+          {
+            "question": "How satisfied are you with your recent shopping experience on our website/app?",
+            "scale": "5-point Scale (Very Dissatisfied → Very Satisfied)",
+            "purpose": "To measure overall satisfaction with the purchase journey."
+          },
+          {
+            "question": "How satisfied are you with the quality of the product(s) you received?",
+            "scale": "5-point Scale (Very Dissatisfied → Very Satisfied)",
+            "purpose": "To evaluate satisfaction with product quality."
+          },
+          {
+            "question": "On a scale of 0–10, how likely are you to recommend our delivery service to others?",
+            "scale": "0–10 (NPS Scale)",
+            "purpose": "To measure loyalty driven by fulfillment experience."
+          },
+          {
+            "question": "Are you satisfied with the speed of delivery?",
+            "scale": "(Yes/No)",
+            "purpose": "To quickly assess delivery satisfaction."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "How satisfied are you with the return or refund process?": [
+      {
+        "survey_title": "E-commerce How satisfied are you with the return or refund process? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How likely are you to continue shopping with us in the future?",
+            "scale": "0–10 (NPS Scale)",
+            "purpose": "To gauge repeat purchase intent and long-term loyalty."
+          },
+          {
+            "question": "What could we improve to make your next shopping experience better?",
+            "scale": "Open Text",
+            "purpose": "To gather detailed qualitative insights for improvement."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ]
+  },
+  "Healthcare": {
+    "NPS": [
+      {
+        "survey_title": "Healthcare NPS Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How likely are you to recommend our hospital/clinic to friends or family?",
+            "scale": "0–10",
+            "purpose": "To assess patient loyalty and trust."
+          },
+          {
+            "question": "Would you recommend your doctor or care provider to others?",
+            "scale": "Yes/No",
+            "purpose": "To measure satisfaction with care."
+          },
+          {
+            "question": "Why did you give this score?",
+            "scale": "Open Text",
+            "purpose": "To understand reasons behind loyalty rating."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "CSAT": [
+      {
+        "survey_title": "Healthcare CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with the quality of medical care received?",
+            "scale": "5-point",
+            "purpose": "To measure care quality satisfaction."
+          },
+          {
+            "question": "How satisfied are you with staff behavior and support?",
+            "scale": "5-point",
+            "purpose": "To assess staff courtesy and responsiveness."
+          },
+          {
+            "question": "Was your waiting time acceptable?",
+            "scale": "Yes/No",
+            "purpose": "To gauge satisfaction with process efficiency."
+          },
+          {
+            "question": "How satisfied are you with appointment scheduling?",
+            "scale": "5-point",
+            "purpose": "To assess administrative convenience."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "NPS and CSAT": [
+      {
+        "survey_title": "Healthcare NPS and CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How likely are you to recommend our healthcare facility to others?",
+            "scale": "0–10",
+            "purpose": "To evaluate loyalty and trust."
+          },
+          {
+            "question": "How satisfied are you with your recent visit/consultation experience?",
+            "scale": "5-point",
+            "purpose": "To assess experience satisfaction."
+          },
+          {
+            "question": "What improvements can help enhance your next visit?",
+            "scale": "Open Text",
+            "purpose": "To collect qualitative service insights."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ]
+  },
+  "Education": {
+    "NPS": [
+      {
+        "survey_title": "Education NPS Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How likely are you to recommend our institution/course to your friends or peers?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          },
+          {
+            "question": "Would you recommend this program or faculty to others?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          },
+          {
+            "question": "What is the main reason for your rating?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          },
+          {
+            "question": "How likely are you to recommend our online learning platform?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "CSAT": [
+      {
+        "survey_title": "Education CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with the quality of teaching and faculty support?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          },
+          {
+            "question": "How satisfied are you with the responsiveness of administrative staff?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "Are you satisfied with the learning resources provided (e.g., library, LMS, materials)?": [
+      {
+        "survey_title": "Education Are you satisfied with the learning resources provided (e.g., library, LMS, materials)? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with career guidance and placement support?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          },
+          {
+            "question": "Please share any suggestions to improve your learning experience.",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "NPS and CSAT": [
+      {
+        "survey_title": "Education NPS and CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "On a scale of 0–10, how likely are you to recommend our college/university to others?",
+            "scale": "0–10",
+            "purpose": "To measure overall student loyalty."
+          },
+          {
+            "question": "How satisfied are you with your overall academic experience so far?",
+            "scale": "5-point",
+            "purpose": "To capture general satisfaction."
+          },
+          {
+            "question": "How likely are you to enroll in another program/course with us in the future?",
+            "scale": "0–10",
+            "purpose": "To assess repeat engagement potential."
+          },
+          {
+            "question": "Did our faculty/staff address your concerns promptly?",
+            "scale": "Yes/No",
+            "purpose": "To evaluate responsiveness."
+          },
+          {
+            "question": "What can we improve to make the learning journey better for students?",
+            "scale": "Text",
+            "purpose": "To gather qualitative improvement ideas."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ]
+  },
+  "Banking": {
+    "NPS": [
+      {
+        "survey_title": "Banking NPS Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How likely are you to recommend our bank to friends or family?",
+            "scale": "0–10",
+            "purpose": "To measure overall loyalty and likelihood to refer."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "Would you recommend our banking app or online services to others?": [
+      {
+        "survey_title": "Banking Would you recommend our banking app or online services to others? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "What is the primary reason for your rating?",
+            "scale": "Open Text",
+            "purpose": "To capture drivers of loyalty or dissatisfaction."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "CSAT": [
+      {
+        "survey_title": "Banking CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with our customer service?",
+            "scale": "5-point",
+            "purpose": "To evaluate interaction quality with bank staff."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "How satisfied are you with our mobile or internet banking services?": [
+      {
+        "survey_title": "Banking How satisfied are you with our mobile or internet banking services? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with the speed of your recent transaction or query resolution?",
+            "scale": "5-point",
+            "purpose": "To gauge operational efficiency."
+          },
+          {
+            "question": "Did our team resolve your issue or query effectively?",
+            "scale": "Yes/No",
+            "purpose": "To check issue resolution success."
+          },
+          {
+            "question": "What can we do to improve your overall banking experience?",
+            "scale": "Open Text",
+            "purpose": "To identify actionable service improvements."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "NPS and CSAT": [
+      {
+        "survey_title": "Banking NPS and CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "On a scale of 0–10, how likely are you to recommend our bank to others?",
+            "scale": "0–10",
+            "purpose": "To assess customer loyalty and advocacy."
+          },
+          {
+            "question": "How satisfied are you with your overall banking experience?",
+            "scale": "5-point",
+            "purpose": "To measure general satisfaction."
+          },
+          {
+            "question": "How satisfied are you with the transparency of charges and fees?",
+            "scale": "5-point",
+            "purpose": "To evaluate trust and clarity in communication."
+          },
+          {
+            "question": "Would you recommend our financial products (cards, loans, etc.) to others?",
+            "scale": "Yes/No",
+            "purpose": "To check product-level satisfaction."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ]
+  },
+  "Retail": {
+    "NPS": [
+      {
+        "survey_title": "Retail NPS Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How likely are you to recommend our store to your friends or family?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          },
+          {
+            "question": "Would you recommend our online store or website to others?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          },
+          {
+            "question": "What is the main reason for your rating?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "CSAT": [
+      {
+        "survey_title": "Retail CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with your recent shopping experience?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          },
+          {
+            "question": "How satisfied are you with product quality and variety?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          },
+          {
+            "question": "How satisfied are you with checkout speed or delivery time?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          },
+          {
+            "question": "Were our store staff helpful and polite during your visit?",
+            "scale": "2 min",
+            "purpose": "nan"
+          },
+          {
+            "question": "What could we do to make your shopping experience better?",
+            "scale": "2–3 min",
+            "purpose": "nan"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "NPS and CSAT": [
+      {
+        "survey_title": "Retail NPS and CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "On a scale of 0–10, how likely are you to recommend our store or website?",
+            "scale": "0–10",
+            "purpose": "To track overall customer loyalty."
+          },
+          {
+            "question": "How satisfied are you with your overall shopping experience with us?",
+            "scale": "5-point",
+            "purpose": "To gauge general customer satisfaction."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "How satisfied are you with our return and exchange process?": [
+      {
+        "survey_title": "Retail How satisfied are you with our return and exchange process? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "Would you recommend our loyalty program or offers to others?",
+            "scale": "Yes/No",
+            "purpose": "To measure engagement with rewards and offers."
+          },
+          {
+            "question": "What one change would improve your shopping experience with us?",
+            "scale": "Open Text",
+            "purpose": "To identify opportunities for improvement."
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ]
+  },
+  "Travel": {
+    "How likely are you to recommend our travel services to a friend or colleague?": [
+      {
+        "survey_title": "Travel How likely are you to recommend our travel services to a friend or colleague? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "Which aspect of our service influenced your rating the most?",
+            "scale": "Open-ended",
+            "purpose": "Understand reason behind score"
+          },
+          {
+            "question": "Did you face any issues during booking or travel?",
+            "scale": "Yes/No",
+            "purpose": "Identify pain points"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "How satisfied are you with the booking process?": [
+      {
+        "survey_title": "Travel How satisfied are you with the booking process? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with the assistance provided by our travel support team?",
+            "scale": "1–5",
+            "purpose": "Evaluate customer support"
+          },
+          {
+            "question": "Was your travel experience as per your expectations?",
+            "scale": "Yes/No",
+            "purpose": "Evaluate overall satisfaction"
+          },
+          {
+            "question": "What could we do to improve your travel experience?",
+            "scale": "Open-ended",
+            "purpose": "Collect qualitative feedback"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "On a scale of 0–10, how likely are you to recommend our travel services?": [
+      {
+        "survey_title": "Travel On a scale of 0–10, how likely are you to recommend our travel services? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied were you with your overall travel experience?",
+            "scale": "1–5",
+            "purpose": "Measure satisfaction"
+          },
+          {
+            "question": "What did you enjoy most about our service?",
+            "scale": "Open-ended",
+            "purpose": "Collect qualitative insight"
+          },
+          {
+            "question": "Did you encounter any problems during your journey?",
+            "scale": "Yes/No",
+            "purpose": "Identify pain points"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ]
+  },
+  "Telecom": {
+    "How likely are you to recommend our telecom services to a friend or colleague?": [
+      {
+        "survey_title": "Telecom How likely are you to recommend our telecom services to a friend or colleague? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "Which aspect of our telecom service influenced your rating the most?",
+            "scale": "Open-ended",
+            "purpose": "Understand reason behind score"
+          },
+          {
+            "question": "Did you face any network or service issues in the last month?",
+            "scale": "Yes/No",
+            "purpose": "Identify pain points"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "CSAT": [
+      {
+        "survey_title": "Telecom CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with your mobile/internet connection quality?",
+            "scale": "1–5",
+            "purpose": "Measure satisfaction with core service"
+          },
+          {
+            "question": "How satisfied are you with the support provided by our customer care team?",
+            "scale": "1–5",
+            "purpose": "Evaluate customer support"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "Was your recent bill or recharge process smooth and accurate?": [
+      {
+        "survey_title": "Telecom Was your recent bill or recharge process smooth and accurate? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "What could we do to improve your telecom experience?",
+            "scale": "Open-ended",
+            "purpose": "Collect qualitative feedback"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "On a scale of 0–10, how likely are you to recommend our telecom services?": [
+      {
+        "survey_title": "Telecom On a scale of 0–10, how likely are you to recommend our telecom services? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied were you with your overall telecom experience?",
+            "scale": "1–5",
+            "purpose": "Measure satisfaction"
+          },
+          {
+            "question": "What did you like most about our service?",
+            "scale": "Open-ended",
+            "purpose": "Collect qualitative insight"
+          },
+          {
+            "question": "Did you encounter any issues with network, billing, or support?",
+            "scale": "Yes/No",
+            "purpose": "Identify pain points"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ]
+  },
+  "FMCG": {
+    "NPS": [
+      {
+        "survey_title": "FMCG NPS Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How likely are you to recommend our product(s) to a friend or family member?",
+            "scale": "0–10",
+            "purpose": "Measure customer loyalty"
+          },
+          {
+            "question": "Which feature or aspect of our product influenced your rating the most?",
+            "scale": "Open-ended",
+            "purpose": "Understand reason behind score"
+          },
+          {
+            "question": "Did you face any issues while purchasing or using our product?",
+            "scale": "Yes/No",
+            "purpose": "Identify pain points"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "CSAT": [
+      {
+        "survey_title": "FMCG CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with the quality of our product?",
+            "scale": "1–5",
+            "purpose": "Measure product satisfaction"
+          },
+          {
+            "question": "How satisfied are you with the availability of our product in stores/online?",
+            "scale": "1–5",
+            "purpose": "Evaluate accessibility"
+          },
+          {
+            "question": "Was your purchase experience smooth?",
+            "scale": "Yes/No",
+            "purpose": "Evaluate overall satisfaction"
+          },
+          {
+            "question": "What can we do to improve our product or your experience?",
+            "scale": "Open-ended",
+            "purpose": "Collect qualitative feedback"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "NPS and CSAT": [
+      {
+        "survey_title": "FMCG NPS and CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "On a scale of 0–10, how likely are you to recommend our product(s)?",
+            "scale": "0–10",
+            "purpose": "Measure loyalty"
+          },
+          {
+            "question": "How satisfied are you with your overall experience with our product?",
+            "scale": "1–5",
+            "purpose": "Measure satisfaction"
+          },
+          {
+            "question": "What did you like the most about our product?",
+            "scale": "Open-ended",
+            "purpose": "Collect qualitative insight"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ]
+  },
+  "Hospitality": {
+    "NPS": [
+      {
+        "survey_title": "Hospitality NPS Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How likely are you to recommend our hotel/resort/restaurant to others?",
+            "scale": "0–10",
+            "purpose": "Measure loyalty"
+          },
+          {
+            "question": "Which aspect of our hospitality service influenced your rating the most?",
+            "scale": "Open-ended",
+            "purpose": "Understand reason behind score"
+          },
+          {
+            "question": "Did you face any issues during your stay/visit?",
+            "scale": "Yes/No",
+            "purpose": "Identify pain points"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "CSAT": [
+      {
+        "survey_title": "Hospitality CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with the room/service quality or ambiance?",
+            "scale": "1–5",
+            "purpose": "Measure satisfaction"
+          },
+          {
+            "question": "How satisfied are you with the staff’s service and responsiveness?",
+            "scale": "1–5",
+            "purpose": "Evaluate service quality"
+          },
+          {
+            "question": "Was your check-in/check-out or dining experience smooth?",
+            "scale": "Yes/No",
+            "purpose": "Evaluate process efficiency"
+          },
+          {
+            "question": "What can we do to improve your hospitality experience?",
+            "scale": "Open-ended",
+            "purpose": "Collect feedback"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "On a scale of 0–10, how likely are you to recommend our hospitality services?": [
+      {
+        "survey_title": "Hospitality On a scale of 0–10, how likely are you to recommend our hospitality services? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with your overall experience?",
+            "scale": "1–5",
+            "purpose": "Measure satisfaction"
+          },
+          {
+            "question": "What did you enjoy the most during your stay/visit?",
+            "scale": "Open-ended",
+            "purpose": "Collect insights"
+          },
+          {
+            "question": "Did you face any issues with service, facilities, or staff?",
+            "scale": "Yes/No",
+            "purpose": "Identify pain points"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ]
+  },
+  "IT software": {
+    "How likely are you to recommend our IT/software services to others?": [
+      {
+        "survey_title": "IT software How likely are you to recommend our IT/software services to others? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "Which aspect of our service influenced your rating the most?",
+            "scale": "Open-ended",
+            "purpose": "Understand reason behind score"
+          },
+          {
+            "question": "Did you face any technical issues or delays in service delivery?",
+            "scale": "Yes/No",
+            "purpose": "Identify pain points"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "CSAT": [
+      {
+        "survey_title": "IT software CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with the software/service quality?",
+            "scale": "1–5",
+            "purpose": "Measure satisfaction"
+          },
+          {
+            "question": "How satisfied are you with support response time and resolution?",
+            "scale": "1–5",
+            "purpose": "Evaluate support"
+          },
+          {
+            "question": "Was project delivery or implementation smooth?",
+            "scale": "Yes/No",
+            "purpose": "Evaluate process efficiency"
+          },
+          {
+            "question": "What can we do to improve your IT/service experience?",
+            "scale": "Open-ended",
+            "purpose": "Collect feedback"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "On a scale of 0–10, how likely are you to recommend our IT/software services?": [
+      {
+        "survey_title": "IT software On a scale of 0–10, how likely are you to recommend our IT/software services? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with overall service delivery?",
+            "scale": "1–5",
+            "purpose": "Measure satisfaction"
+          },
+          {
+            "question": "What aspect of our service impressed you the most?",
+            "scale": "Open-ended",
+            "purpose": "Collect insights"
+          },
+          {
+            "question": "Did you face any issues with service, support, or project delivery?",
+            "scale": "Yes/No",
+            "purpose": "Identify pain points"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ]
+  },
+  "Automative": {
+    "NPS": [
+      {
+        "survey_title": "Automative NPS Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How likely are you to recommend our vehicle brand to friends or colleagues?",
+            "scale": "0–10",
+            "purpose": "Measure loyalty"
+          },
+          {
+            "question": "Which aspect of our vehicle/service influenced your rating the most?",
+            "scale": "Open-ended",
+            "purpose": "Understand reason behind score"
+          },
+          {
+            "question": "Did you face any issues during purchase, delivery, or servicing?",
+            "scale": "Yes/No",
+            "purpose": "Identify pain points"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "CSAT": [
+      {
+        "survey_title": "Automative CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "How satisfied are you with your vehicle’s performance and quality?",
+            "scale": "1–5",
+            "purpose": "Measure product satisfaction"
+          },
+          {
+            "question": "How satisfied are you with your dealership or service center experience?",
+            "scale": "1–5",
+            "purpose": "Evaluate service satisfaction"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "Was your test drive and delivery process smooth?": [
+      {
+        "survey_title": "Automative Was your test drive and delivery process smooth? Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "What can we improve in our sales or service experience?",
+            "scale": "Open-ended",
+            "purpose": "Collect feedback"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ],
+    "NPS and CSAT": [
+      {
+        "survey_title": "Automative NPS and CSAT Survey",
+        "duration": "2–3 min",
+        "questions": [
+          {
+            "question": "On a scale of 0–10, how likely are you to recommend our brand?",
+            "scale": "0–10",
+            "purpose": "Measure loyalty"
+          },
+          {
+            "question": "How satisfied are you with your overall automotive experience?",
+            "scale": "1–5",
+            "purpose": "Measure satisfaction"
+          },
+          {
+            "question": "What do you like most about your vehicle or our service?",
+            "scale": "Open-ended",
+            "purpose": "Collect insight"
+          },
+          {
+            "question": "Did you encounter any issues with delivery, servicing, or staff?",
+            "scale": "Yes/No",
+            "purpose": "Identify pain points"
+          }
+        ],
+        "user_recommendation_input": "Do you want to know purpose and duration for doing the above survey?"
+      }
+    ]
+  }
+}
