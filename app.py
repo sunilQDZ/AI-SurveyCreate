@@ -319,7 +319,7 @@
 #         }
 
 #     except Exception as e:
-#         print("⚠️ OpenAI analysis failed:", e)
+#         print("[WARNING] OpenAI analysis failed:", e)
 #         # On any failure: we will ask all questions again
 #         return empty_result
 
@@ -640,7 +640,7 @@
 #     # Survey type ALWAYS from first API context
 #     survey_type = detected_survey_type if detected_survey_type in ["nps", "csat", "ces", "general"] else "general"
 
-#     # 🔥 Your new PERFECT prompt
+#     # [INFO] Your new PERFECT prompt
 #     prompt = f"""
 # You are a CX survey expert.
 
@@ -861,7 +861,7 @@
 #                 ai_questions_added = True
 
 #             except Exception as e:
-#                 print(f"⚠️ AI question generation failed (add): {e}")
+#                 print(f"[WARNING] AI question generation failed (add): {e}")
 #                 return jsonify({"error": f"AI customization failed: {str(e)}"}), 500
 
 #         # ----- REMOVING questions -----
@@ -886,7 +886,7 @@
 #                 questions.pop(i)
 
 #             return jsonify({
-#                 "message": f"🗑️ Removed {len(to_remove)} question(s) successfully.",
+#                 "message": f"[DELETED] Removed {len(to_remove)} question(s) successfully.",
 #                 "ask_add": True,
 #                 "customization_questions": [{
 #                     "question": "Would you like to add any questions to this template now?",
@@ -931,7 +931,7 @@
 #         ]
 
 #     return jsonify({
-#         "message": "✅ Template customization completed successfully.",
+#         "message": "[SUCCESS] Template customization completed successfully.",
 #         "selected_template": selected,
 #         "customization_questions": customization_qs
 #     })
@@ -971,10 +971,14 @@
 # # -----------------------
 # if __name__ == "__main__":
 #     app.run(host="0.0.0.0", port=5000, debug=True)
+
+
+
+
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from dotenv import load_dotenv
-import json, os, re
+import json, os, re, random
 from datetime import datetime
 from openai import OpenAI
 
@@ -1173,51 +1177,157 @@ def clamp_duration(duration: str | None) -> str:
     return "2–2.5 mins"
 
 
+def enforce_survey_pattern(template: dict, topic_hint: str = "", default_max: int = 5) -> dict:
+    """
+    Enforces strict question pattern constraints on survey templates:
+    1. Default template length is EXACTLY 5 questions (unless customized).
+    2. First question MUST be NPS ('scale_type': 'nps').
+    3. Last question MUST be Text ('scale_type': 'text').
+    4. Exactly ONE NPS question per template (at index 0).
+    5. Exactly ONE Text question per template (at the last index).
+    6. Middle questions are a randomized, varied mix of scale types (rating, csat, ces, radio, mcq).
+    """
+    questions = template.get("questions", [])
+    if not isinstance(questions, list):
+        questions = []
+
+    topic = topic_hint or "your recent experience"
+    allowed_middle_scales = ["rating", "csat", "ces", "radio", "mcq"]
+
+    # Step 1: Ensure question count is at least 5 and trimmed to default_max (5 by default)
+    if len(questions) < 5:
+        while len(questions) < 5:
+            r_scale = random.choice(allowed_middle_scales)
+            q_filler = {
+                "question": f"How would you rate your overall experience with {topic}?",
+                "scale_type": r_scale
+            }
+            if r_scale in ["radio", "mcq"]:
+                q_filler["options"] = ["Very satisfied", "Satisfied", "Neutral", "Unsatisfied"]
+            questions.append(q_filler)
+    elif len(questions) > default_max:
+        questions = questions[:default_max]
+
+    # Step 2: Ensure Question 1 (index 0) is NPS
+    standard_nps_q = {
+        "question": f"On a scale of 0–10, how likely are you to recommend us to a friend or colleague based on {topic}?",
+        "scale_type": "nps"
+    }
+
+    if questions[0].get("scale_type") == "nps":
+        pass
+    else:
+        # Check if there is an NPS question elsewhere in the template
+        nps_idx = -1
+        for i, q in enumerate(questions):
+            if q.get("scale_type") == "nps":
+                nps_idx = i
+                break
+        if nps_idx > 0:
+            nps_q = questions.pop(nps_idx)
+            questions.insert(0, nps_q)
+        else:
+            questions[0] = standard_nps_q
+
+    # Step 3: Ensure Last Question (index -1) is Text
+    standard_text_q = {
+        "question": "What improvements or additional feedback do you have for us?",
+        "scale_type": "text"
+    }
+
+    if questions[-1].get("scale_type") == "text":
+        pass
+    else:
+        # Check if there is a Text question elsewhere in questions[1:]
+        text_idx = -1
+        for i in range(len(questions) - 1, 0, -1):
+            if questions[i].get("scale_type") == "text":
+                text_idx = i
+                break
+        if text_idx > 0:
+            text_q = questions.pop(text_idx)
+            questions.append(text_q)
+        else:
+            questions[-1] = standard_text_q
+
+    # Step 4: Fix middle questions (index 1 to len-2) so NONE are 'nps' or 'text'
+    for i in range(1, len(questions) - 1):
+        q = questions[i]
+        st = q.get("scale_type")
+
+        if st in ["nps", "text"]:
+            # Randomly select a middle scale type (rating, csat, ces, radio, mcq)
+            new_scale = random.choice(allowed_middle_scales)
+            q["scale_type"] = new_scale
+            if new_scale == "radio" and not q.get("options"):
+                q["options"] = ["Yes", "No", "Not sure"]
+            elif new_scale == "mcq" and not q.get("options"):
+                q["options"] = ["Quality", "Speed", "Price", "Customer Service"]
+
+    # Step 5: Final strict enforcement of Q0 and Q_last scale types
+    questions[0]["scale_type"] = "nps"
+    questions[-1]["scale_type"] = "text"
+
+    # Step 6: Ensure radio/mcq options exist
+    for q in questions:
+        if q.get("scale_type") == "radio" and not q.get("options"):
+            q["options"] = ["Yes", "No", "Not sure"]
+        elif q.get("scale_type") == "mcq" and not q.get("options"):
+            q["options"] = ["Option 1", "Option 2", "Option 3"]
+
+    template["questions"] = questions
+    return template
+
+
 def build_fallback_templates(survey_type: str, user_input: str) -> list:
     """
     Production fallback template engine in case of OpenAI API limits or outages.
     """
     topic = user_input or "our services"
     st_upper = (survey_type or "general").upper()
-    first_q = get_first_question_for_type(survey_type or "general", topic)
-    return [
+    nps_q = {
+        "question": f"On a scale of 0–10, how likely are you to recommend us to a friend or colleague based on {topic}?",
+        "scale_type": "nps"
+    }
+    fallback_templates = [
         {
-            "title": f"{st_upper} Survey - {topic.title()}",
-            "purpose": f"Capture responses related to {topic}",
-            "duration": "2–2.5 mins",
+            "title": f"Quick {st_upper} Pulse Check - {topic.title()}",
+            "purpose": f"Quick pulse check survey for {topic}",
+            "duration": "2 mins",
             "questions": [
-                first_q,
-                {"question": f"How clear and easy to understand was the information provided about {topic}?", "scale_type": "text"},
+                nps_q,
+                {"question": f"How clear and easy to understand was the information provided about {topic}?", "scale_type": "rating"},
                 {"question": "Did you encounter any issues during your experience?", "scale_type": "radio", "options": ["Yes", "No", "Not sure"]},
                 {"question": "How likely are you to continue using our services?", "scale_type": "rating"},
                 {"question": "What improvements or suggestions do you have for us?", "scale_type": "text"}
             ]
         },
         {
-            "title": f"Detailed {st_upper} Feedback - {topic.title()}",
-            "purpose": f"Detailed evaluation survey for {topic}",
+            "title": f"Standard {st_upper} Survey - {topic.title()}",
+            "purpose": f"Capture balanced feedback related to {topic}",
             "duration": "2–2.5 mins",
             "questions": [
-                first_q,
-                {"question": "How satisfied are you with the overall speed and quality of service?", "scale_type": "rating"},
+                nps_q,
+                {"question": "How satisfied are you with the overall speed and quality of service?", "scale_type": "csat"},
                 {"question": "Were your expectations met during this interaction?", "scale_type": "radio", "options": ["Yes", "No", "Partially"]},
-                {"question": "How would you rate the helpfulness of our team?", "scale_type": "rating"},
+                {"question": "How easy was it to complete your transaction or request?", "scale_type": "ces"},
                 {"question": "Please share any additional comments or ideas.", "scale_type": "text"}
             ]
         },
         {
-            "title": f"Quick {st_upper} Check-in - {topic.title()}",
-            "purpose": f"Quick pulse check survey for {topic}",
-            "duration": "2–2.5 mins",
+            "title": f"Core {st_upper} Feedback - {topic.title()}",
+            "purpose": f"Core evaluation survey for {topic}",
+            "duration": "2 mins",
             "questions": [
-                first_q,
-                {"question": "How easy was it to complete your task today?", "scale_type": "rating"},
-                {"question": "Would you recommend our product/service to a colleague or friend?", "scale_type": "radio", "options": ["Yes", "No", "Maybe"]},
-                {"question": "How well did the service meet your needs?", "scale_type": "rating"},
-                {"question": "Is there anything else you would like us to know?", "scale_type": "text"}
+                nps_q,
+                {"question": "How would you rate the overall quality of service?", "scale_type": "rating"},
+                {"question": "How satisfied are you with the support provided?", "scale_type": "csat"},
+                {"question": "Which aspect of our service stood out most to you?", "scale_type": "mcq", "options": ["Quality", "Speed", "Reliability", "Support"]},
+                {"question": "Is there anything specific we could do to improve your overall experience?", "scale_type": "text"}
             ]
         }
     ]
+    return [enforce_survey_pattern(t, topic, default_max=5) for t in fallback_templates]
 
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -1428,7 +1538,7 @@ User request:
         }
 
     except Exception as e:
-        print("⚠️ OpenAI analysis failed:", e)
+        print("[WARNING] OpenAI analysis failed:", e)
         # On any failure: we will ask all questions again
         return empty_result
 
@@ -1619,26 +1729,29 @@ def generate_survey():
 
     # Prompt for GPT (templates generation)
     prompt = f"""
-You are a CX survey expert.
-Generate 3 survey templates for: "{user_input}"
-Survey type: "{survey_type.upper()} Survey Template" (NPS/CSAT/CES/GENERAL).
+You are an elite CX and Market Research AI Expert.
+Generate 3 distinct, highly tailored survey templates for the topic: "{user_input}"
+Target Survey Category: "{survey_type.upper()} Survey Template".
 
-Rules:
-- STRICT JSON array ONLY (no explanation).
-- Each template object must have keys: "title", "purpose", "duration", "questions".
-- duration MUST be around 2–2.5 minutes only (e.g., "2–2.5 mins").
-- FIRST question MUST be a rating question that matches survey_type its be on the basis of gnerated survey type.:
-    NPS  → 0–10 "likelihood to recommend" → scale_type "nps"
-    CSAT → 1–5 or 1–7 "satisfaction"      → scale_type "csat"
-    CES  → 1–5 or 1–7 "ease/effort"       → scale_type "ces"
-- DO NOT mix NPS/CSAT/CES scales in one template.
-- Each template MUST contain 5–7 questions.
-- For every question, return an object with at least:
-    - "question": text of the question
+RULES & STRUCTURE:
+- STRICT JSON array ONLY (no markdown fences, no conversational text).
+- Each template object MUST have: "title", "purpose", "duration", "questions".
+- "duration" MUST be around 2–2.5 minutes (e.g., "2–2.5 mins").
+- DEFAULT QUESTION COUNT RULE: Each template MUST contain EXACTLY 5 domain-specific, actionable questions (Q1 = NPS, Q2–Q4 = Middle scales, Q5 = Text).
+
+QUESTION PATTERN RULES (MANDATORY):
+1. FIRST question (Position 1): MUST be an NPS recommendation scale ("scale_type": "nps", 0–10 scale).
+2. LAST question (Final Position): MUST be an open-ended feedback question ("scale_type": "text").
+3. Template MUST contain EXACTLY ONE NPS question (at Position 1).
+4. Template MUST contain EXACTLY ONE Text question (at Final Position).
+5. Middle questions (Positions 2 to len-1): MUST be a randomized, varied mix of scale types selected from ["rating", "csat", "ces", "radio", "mcq", "matrix"]. DO NOT use "nps" or "text" in middle questions.
+
+QUESTION FORMAT:
+- Each question object must have:
+    - "question": clear, relevant question text tailored to "{user_input}"
     - "scale_type": one of ["nps","csat","ces","rating","text","radio","mcq","matrix","file"]
-- For any question with "scale_type": "radio" or "mcq", include an "options" array of labels.
-- Avoid duplicate question meaning in a single template.
-- this is our model totally a survey generator tool give me more accurate result better result.
+- For any question with "scale_type": "radio" or "mcq", include an "options" array of realistic choices.
+- Avoid duplicate question intent within a single template.
 """
 
     try:
@@ -1646,7 +1759,7 @@ Rules:
             model="gpt-3.5-turbo",
             timeout=15,
             messages=[
-                {"role": "system", "content": "Return strict JSON only, no explanation."},
+                {"role": "system", "content": "You are an elite CX Survey AI Architect. Output a valid JSON array of templates ONLY. No explanations."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.4,
@@ -1656,7 +1769,7 @@ Rules:
         try:
             templates = extract_json_array(text)
         except Exception as e:
-            print("⚠️ extract_json_array failed:", e)
+            print("[WARNING] extract_json_array failed:", e)
             templates = []
 
     except Exception as e:
@@ -1664,10 +1777,8 @@ Rules:
         templates = []
 
     if not templates:
-        print("⚠️ OpenAI template generation returned empty or failed. Using fallback template engine.")
+        print("[WARNING] OpenAI template generation returned empty or failed. Using fallback template engine.")
         templates = build_fallback_templates(survey_type, user_input)
-
-    enforced_first_q = get_first_question_for_type(survey_type, user_input)
 
     # Clean and enforce constraints on each template
     for t in templates:
@@ -1704,15 +1815,7 @@ Rules:
                         options_clean.append(s)
 
             detected = infer_scale_type(question_text)
-
-            # Smart scale selection
-            if detected in ["nps", "csat", "ces", "rating"]:
-                if survey_type in ["nps", "csat", "ces"]:
-                    scale = survey_type
-                else:
-                    scale = detected if detected in ["nps", "csat", "ces"] else "rating"
-            else:
-                scale = detected if detected in ["text", "radio", "mcq", "matrix", "file"] else "text"
+            scale = detected if detected in ALLOWED_SCALE_TYPES else "rating"
 
             q_obj = {
                 "question": question_text,
@@ -1733,36 +1836,13 @@ Rules:
             cleaned_questions.append(q_obj)
 
         t["questions"] = cleaned_questions
-
-        # Ensure FIRST question is correct
-        if not t["questions"] or t["questions"][0]["scale_type"] != (
-            survey_type if survey_type in ["nps", "csat", "ces"] else t["questions"][0]["scale_type"]
-        ):
-            t["questions"].insert(0, enforced_first_q)
-
-        # Guarantee 5–7 questions
-        if len(t["questions"]) < 5:
-            while len(t["questions"]) < 5:
-                t["questions"].append({
-                    "question": f"Please share any additional feedback about {user_input}.",
-                    "scale_type": "text"
-                })
-        elif len(t["questions"]) > 7:
-            t["questions"] = t["questions"][:7]
-
         processed_templates.append(t)
 
-    # Normalize template scales
+    # Strictly enforce pattern: 1st=NPS, last=Text, single NPS, single Text
     processed_templates = [
-        normalize_template_scales(t, forced_type=survey_type)
+        enforce_survey_pattern(t, topic_hint=user_input)
         for t in processed_templates
     ]
-
-    # For any radio question still missing options, add default Yes/No options
-    for t in processed_templates:
-        for q in t.get("questions", []):
-            if q.get("scale_type") == "radio" and not q.get("options"):
-                q["options"] = ["Yes", "No", "Not sure"]
 
     # Save to history
     save_history({
@@ -1792,7 +1872,6 @@ def generate_more_surveys():
         return jsonify({"error": "Missing focus_area"}), 400
 
     # FRONTEND context from generate_question_flow
-    # FRONTEND context from generate_question_flow
     ctx = data.get("context") or {}
 
     # Extract fields safely
@@ -1812,11 +1891,9 @@ def generate_more_surveys():
         detected_purpose = detected_purpose or ai_re.get("purpose") or ""
         detected_touchpoint = detected_touchpoint or ai_re.get("touchpoint") or ""
 
-
     # Survey type ALWAYS from first API context
     survey_type = detected_survey_type if detected_survey_type in ["nps", "csat", "ces", "general"] else "general"
 
-    # 🔥 Your new PERFECT prompt
     prompt = f"""
 You are a CX survey expert.
 
@@ -1839,10 +1916,6 @@ EXAMPLES (do NOT copy, only understand):
   and focus_area = Food
   → Output MUST be: "Café Food Experience Survey Template X"
 
-- If original request = Hospital patient feedback
-  and focus_area = Doctor Interaction
-  → Output MUST be: "Doctor Interaction Feedback Template X"
-
 STRICT RULES:
 - Return ONLY a JSON array of templates.
 - Each template MUST have:
@@ -1850,18 +1923,17 @@ STRICT RULES:
     "purpose"
     "duration"
     "questions"
-- Duration MUST ALWAYS be: "2–2.5 mins"
-- EXACT 5 questions per template.
+- DEFAULT QUESTION COUNT RULE: Each template MUST contain EXACTLY 5 questions (Q1 = NPS, Q2–Q4 = Middle scales, Q5 = Text).
+- QUESTION PATTERN RULES (CRITICAL):
+    1. FIRST question MUST be scale_type "nps" (0–10 recommendation).
+    2. LAST question MUST be scale_type "text" (open-ended feedback).
+    3. Template MUST contain ONLY ONE NPS question (at the first position).
+    4. Template MUST contain ONLY ONE Text question (at the last position).
+    5. Middle questions MUST use scale_type "rating", "csat", "ces", "radio", "mcq", or "matrix" (NO "nps" or "text" in middle questions).
 - Questions MUST have:
     "question"
     "scale_type"
-    "options" (required only for radio/mcq)
-
-SCALE RULES:
-- nps → 0–10 likelihood to recommend
-- csat → 1–5 satisfaction
-- ces → 1–5 effort/ease
-- radio/mcq → MUST include "options"
+    "options" (required for radio/mcq)
 
 DO NOT add any extra keys.
 DO NOT rename any keys.
@@ -1884,36 +1956,33 @@ DO NOT output text before/after JSON.
         try:
             templates = extract_json_array(text)
         except Exception as ex:
-            print("❌ extract_json_array failed in generate_more_surveys:", ex)
+            print("[ERROR] extract_json_array failed in generate_more_surveys:", ex)
             print("RAW TEXT FROM GPT:\n", repr(text))
             templates = []
-
-        # Normalize scales
-        templates = [
-            normalize_template_scales(t, forced_type=survey_type)
-            for t in templates
-        ]
-
-        # Ensure radio questions have options
-        for t in templates:
-            for q in t.get("questions", []):
-                if q.get("scale_type") == "radio" and not q.get("options"):
-                    q["options"] = ["Yes", "No", "Not sure"]
-
-        # Clamp duration
-        for t in templates:
-            t["duration"] = clamp_duration(t.get("duration"))
-
-        return jsonify({
-            "templates": templates,
-            "focus_area": focus_area,
-            "survey_type": survey_type,
-            "context_used": ctx  # To debug if needed
-        })
-
     except Exception as e:
-        print("Error generate_more:", e)
-        return jsonify({"error": str(e)}), 500
+        print("[ERROR] OpenAI generate_more_surveys call failed:", e)
+        templates = []
+
+    if not templates:
+        print("[WARNING] Using fallback template engine for generate_more_surveys.")
+        templates = build_fallback_templates(survey_type, focus_area or original_user_input)
+
+    # Enforce question pattern on each template
+    templates = [
+        enforce_survey_pattern(t, topic_hint=focus_area or original_user_input)
+        for t in templates
+    ]
+
+    # Clamp duration
+    for t in templates:
+        t["duration"] = clamp_duration(t.get("duration"))
+
+    return jsonify({
+        "templates": templates,
+        "focus_area": focus_area,
+        "survey_type": survey_type,
+        "context_used": ctx
+    })
 
 
 # ---------- CUSTOMIZE SELECTED TEMPLATE ----------
@@ -1951,6 +2020,26 @@ def customize_selected_template():
 
     questions = selected.get("questions", [])
     title = selected.get("title", "General Feedback")
+
+    # Direct User Custom Edits (Title, Purpose, Question text, Scale types, Options)
+    custom_title = data.get("title")
+    if custom_title and isinstance(custom_title, str):
+        selected["title"] = custom_title.strip()
+
+    custom_purpose = data.get("purpose")
+    if custom_purpose and isinstance(custom_purpose, str):
+        selected["purpose"] = custom_purpose.strip()
+
+    edited_questions = data.get("edited_questions") or data.get("updated_questions")
+    if edited_questions and isinstance(edited_questions, list):
+        for i, edited_q in enumerate(edited_questions):
+            if i < len(questions) and isinstance(edited_q, dict):
+                if "question" in edited_q and edited_q["question"]:
+                    questions[i]["question"] = str(edited_q["question"]).strip()
+                if "scale_type" in edited_q and edited_q["scale_type"]:
+                    questions[i]["scale_type"] = edited_q["scale_type"]
+                if "options" in edited_q and isinstance(edited_q["options"], list):
+                    questions[i]["options"] = edited_q["options"]
 
     # Detect survey_type from first question
     primary_survey_type = (
@@ -1994,57 +2083,62 @@ def customize_selected_template():
                     for q in content.split("\n") if q.strip()
                 ]
 
-                # Local scale type inference for added questions
-                def infer_add_scale(question: str) -> str:
-                    lower_q = question.lower()
-                    if "nps" in lower_q or "recommend" in lower_q or "likely" in lower_q:
-                        return "nps"
-                    if "satisfied" in lower_q or "csat" in lower_q:
-                        return "csat"
-                    if "ease" in lower_q or "ces" in lower_q:
-                        return "ces"
-                    if any(x in lower_q for x in ["rate", "rating", "score"]):
-                        return "rating"
-                    if any(x in lower_q for x in ["why", "describe", "explain", "feedback", "suggest"]):
-                        return "text"
-                    if any(x in lower_q for x in ["choose", "select", "pick one", "yes or no", "yes/no"]):
-                        return "radio"
-                    if any(x in lower_q for x in ["multiple", "select all", "choose all"]):
-                        return "mcq"
-                    if "matrix" in lower_q or "compare" in lower_q:
-                        return "matrix"
-                    if "upload" in lower_q or "file" in lower_q:
-                        return "file"
-                    return "rating"
-
-                new_qs = []
-                for q in ai_questions[:4]:
-                    inferred = infer_add_scale(q)
-
-                    # Force match with template survey type for rating questions
-                    if inferred in ["nps", "csat", "ces", "rating"]:
-                        final_scale = (
-                            primary_survey_type
-                            if primary_survey_type in ["nps", "csat", "ces"]
-                            else inferred
-                        )
-                    else:
-                        final_scale = inferred
-
-                    q_obj = {"question": q, "scale_type": final_scale}
-
-                    # RADIO OPTIONS for added questions
-                    if final_scale == "radio":
-                        q_obj["options"] = ["Yes", "No", "Not sure"]
-
-                    new_qs.append(q_obj)
-
-                questions.extend(new_qs)
-                ai_questions_added = True
-
             except Exception as e:
-                print(f"⚠️ AI question generation failed (add): {e}")
-                return jsonify({"error": f"AI customization failed: {str(e)}"}), 500
+                print(f"[WARNING] AI question generation failed (add): {e}")
+                ai_questions = [
+                    f"How satisfied are you with our {topic} process?",
+                    f"How clear was the communication regarding {topic}?",
+                    f"Did you experience any difficulty with {topic}?",
+                    f"What improvements do you suggest for {topic}?"
+                ]
+
+            # Local scale type inference for added questions
+            def infer_add_scale(question: str) -> str:
+                lower_q = question.lower()
+                if "nps" in lower_q or "recommend" in lower_q or "likely" in lower_q:
+                    return "nps"
+                if "satisfied" in lower_q or "csat" in lower_q:
+                    return "csat"
+                if "ease" in lower_q or "ces" in lower_q:
+                    return "ces"
+                if any(x in lower_q for x in ["rate", "rating", "score"]):
+                    return "rating"
+                if any(x in lower_q for x in ["why", "describe", "explain", "feedback", "suggest"]):
+                    return "text"
+                if any(x in lower_q for x in ["choose", "select", "pick one", "yes or no", "yes/no"]):
+                    return "radio"
+                if any(x in lower_q for x in ["multiple", "select all", "choose all"]):
+                    return "mcq"
+                if "matrix" in lower_q or "compare" in lower_q:
+                    return "matrix"
+                if "upload" in lower_q or "file" in lower_q:
+                    return "file"
+                return "rating"
+
+            new_qs = []
+            for q in ai_questions[:4]:
+                inferred = infer_add_scale(q)
+
+                # Force match with template survey type for rating questions
+                if inferred in ["nps", "csat", "ces", "rating"]:
+                    final_scale = (
+                        primary_survey_type
+                        if primary_survey_type in ["nps", "csat", "ces"]
+                        else inferred
+                    )
+                else:
+                    final_scale = inferred
+
+                q_obj = {"question": q, "scale_type": final_scale}
+
+                # RADIO OPTIONS for added questions
+                if final_scale == "radio":
+                    q_obj["options"] = ["Yes", "No", "Not sure"]
+
+                new_qs.append(q_obj)
+
+            questions.extend(new_qs)
+            ai_questions_added = True
 
         # ----- REMOVING questions -----
         elif action == "remove":
@@ -2068,7 +2162,7 @@ def customize_selected_template():
                 questions.pop(i)
 
             return jsonify({
-                "message": f"🗑️ Removed {len(to_remove)} question(s) successfully.",
+                "message": f"[DELETED] Removed {len(to_remove)} question(s) successfully.",
                 "ask_add": True,
                 "customization_questions": [{
                     "question": "Would you like to add any questions to this template now?",
@@ -2113,7 +2207,7 @@ def customize_selected_template():
         ]
 
     return jsonify({
-        "message": "✅ Template customization completed successfully.",
+        "message": "[SUCCESS] Template customization completed successfully.",
         "selected_template": selected,
         "customization_questions": customization_qs
     })
@@ -2153,10 +2247,11 @@ def finalize_template():
 # -----------------------
 if __name__ == "__main__":
     env = os.getenv("FLASK_ENV", "development")
+    port = int(os.getenv("PORT", 5005))
     if env == "production":
         from waitress import serve
-        print("Starting production server with Waitress on http://0.0.0.0:5000 ...")
-        serve(app, host="0.0.0.0", port=5000, threads=8)
+        print(f"[INFO] Starting production server on http://localhost:{port} (http://127.0.0.1:{port}) ...")
+        serve(app, host="0.0.0.0", port=port, threads=8)
     else:
-        print("Starting development server...")
-        app.run(host="0.0.0.0", port=5000, debug=True)
+        print(f"[INFO] Starting development server on http://localhost:{port} (http://127.0.0.1:{port}) ...")
+        app.run(host="0.0.0.0", port=port, debug=True)
