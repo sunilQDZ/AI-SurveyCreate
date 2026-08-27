@@ -2520,7 +2520,13 @@ sendBtn.addEventListener("click", () => {
   const txt = userInput.value.trim();
   if (!txt) return;
   userInput.value = "";
-  startFlow(txt);
+
+  // If currently in an active question flow → treat input as answer to current question
+  if (Array.isArray(questionFlow) && questionFlow.length > 0 && currentQuestionIndex < questionFlow.length) {
+    handleAnswer(txt);
+  } else {
+    startFlow(txt);
+  }
 });
 
 userInput.addEventListener("keydown", (e) => {
