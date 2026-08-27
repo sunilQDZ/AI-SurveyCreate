@@ -2041,19 +2041,46 @@ async function startFlow(text) {
 
   currentSurveyType = surveyContext.survey_type || "general";
 
-  // If everything is known, backend sets skip_questions = true
-  if (resp.skip_questions === true) {
-    appendMessage("✅ I understood all required details. Generating templates…", "bot");
+  if (surveyContext.survey_type) collectedAnswers["survey_type"] = surveyContext.survey_type;
+  if (surveyContext.audience) collectedAnswers["audience"] = surveyContext.audience;
+  if (surveyContext.purpose) collectedAnswers["purpose"] = surveyContext.purpose;
+  if (surveyContext.touchpoint) collectedAnswers["touchpoint"] = surveyContext.touchpoint;
 
-    if (surveyContext.survey_type) collectedAnswers["survey_type"] = surveyContext.survey_type;
-    if (surveyContext.audience) collectedAnswers["audience"] = surveyContext.audience;
-    if (surveyContext.purpose) collectedAnswers["purpose"] = surveyContext.purpose;
-    if (surveyContext.touchpoint) collectedAnswers["touchpoint"] = surveyContext.touchpoint;
+  // Hybrid case: All 4 parameters detected → Show summary with 1-click Generate or Review option
+  if (resp.all_detected === true) {
+    const summaryMsg = `🧠 <b>I understood your request!</b><br>${resp.summary_text || ""}`;
+    appendMessage(summaryMsg, "bot");
 
-    return generateSurvey();
+    const box = document.createElement("div");
+    box.className = "msg options-list bot";
+    const optDiv = document.createElement("div");
+    optDiv.className = "options";
+
+    const genBtn = document.createElement("button");
+    genBtn.className = "chip";
+    genBtn.innerHTML = "🚀 Generate Templates Now";
+    genBtn.onclick = () => {
+      box.remove();
+      generateSurvey();
+    };
+
+    const editBtn = document.createElement("button");
+    editBtn.className = "chip";
+    editBtn.innerHTML = "✏️ Review / Change Details";
+    editBtn.onclick = () => {
+      box.remove();
+      setupFullQuestionReview(resp);
+    };
+
+    optDiv.appendChild(genBtn);
+    optDiv.appendChild(editBtn);
+    box.appendChild(optDiv);
+    chatEl.appendChild(box);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return;
   }
 
-  // Otherwise, follow-up questions from backend
+  // Otherwise, follow-up questions for missing fields
   questionFlow = (resp.question_flow || []).map((q) => ({
     id: q.id || "",
     text: q.q || q.question,
@@ -2062,12 +2089,44 @@ async function startFlow(text) {
   }));
 
   if (!questionFlow.length) {
-    // Safety: if no questions but skip_questions was false
     appendMessage("❓ I could not determine all details, but I'll try generating templates anyway.", "bot");
     return generateSurvey();
   }
 
-  appendMessage("📝 I need a few quick details to complete your survey setup…", "bot");
+  const prefix = resp.summary_text ? `📝 <b>Detected:</b> ${resp.summary_text}<br>Please answer the missing details below:` : "📝 I need a few quick details to complete your survey setup…";
+  appendMessage(prefix, "bot");
+  askNextQuestion();
+}
+
+// ===============================
+// SETUP FULL QUESTION REVIEW
+// ===============================
+function setupFullQuestionReview(resp) {
+  questionFlow = [
+    {
+      id: "survey_type",
+      text: "Which type of survey would you like to create?",
+      options: ["NPS", "CSAT", "CES", "General / Not sure"],
+    },
+    {
+      id: "audience",
+      text: "Who is your audience for this survey?",
+      options: ["Customers", "Employees", "B2B", "Clients", "Users", "Learners", "Vendors", "Parents", "General users"],
+    },
+    {
+      id: "purpose",
+      text: "What is the main topic or purpose of this survey?",
+      allow_text: true,
+    },
+    {
+      id: "touchpoint",
+      text: "Which touchpoint is this survey primarily about?",
+      options: ["Website", "Mobile app", "Store visit / Branch visit", "Call center / Phone support", "Email support", "WhatsApp / Chat support", "Delivery experience", "Onboarding / Signup flow", "Billing & payments", "Other"],
+      allow_text: true,
+    }
+  ];
+  currentQuestionIndex = 0;
+  appendMessage("📝 Reviewing full survey setup questions…", "bot");
   askNextQuestion();
 }
 
