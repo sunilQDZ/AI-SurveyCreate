@@ -634,88 +634,89 @@ def generate_question_flow():
 
     question_flow = []
 
-    # Ask ONLY for missing fields
-    if not type_known:
-        question_flow.append({
-            "id": "survey_type",
-            "q": "Which type of survey would you like to create?",
-            "options": ["NPS", "CSAT", "CES", "General / Not sure"]
-        })
+    # 1. Survey Type Question
+    st_options = ["NPS", "CSAT", "CES", "General / Not sure"]
+    if survey_type and survey_type.upper() in ["NPS", "CSAT", "CES"]:
+        clean_st = survey_type.upper()
+        if clean_st in st_options:
+            st_options.remove(clean_st)
+            st_options.insert(0, clean_st)
 
-    if not detected_audience:
-        # Base audience options (unchanged IDs/structure)
-        base_audience_options = [
-            "Customers",
-            "Employees",
-            "B2B",
-            "Clients",
-            "Users",
-            "Learners",
-            "Vendors",
-            "Parents",
-            "General users"
-        ]
-        # Inject AI suggestion (if available)
-        options = base_audience_options.copy()
-        if ai_audience_suggestion:
-            suggested_label = f"Suggested: {ai_audience_suggestion}"
-            # Put suggestion at the front if not already there
-            if suggested_label not in options:
-                options.insert(0, suggested_label)
+    question_flow.append({
+        "id": "survey_type",
+        "q": "Which type of survey would you like to create?",
+        "options": st_options
+    })
 
-        question_flow.append({
-            "id": "audience",
-            "q": "Who is your audience for this survey?",
-            "options": options
-        })
+    # 2. Audience Question
+    base_audience_options = [
+        "Customers",
+        "Employees",
+        "B2B",
+        "Clients",
+        "Users",
+        "Learners",
+        "Vendors",
+        "Parents",
+        "General users"
+    ]
+    options_aud = base_audience_options.copy()
+    aud_hint = detected_audience or ai_audience_suggestion
+    if aud_hint:
+        clean_aud = aud_hint.replace("Suggested: ", "").strip()
+        if clean_aud in options_aud:
+            options_aud.remove(clean_aud)
+            options_aud.insert(0, clean_aud)
+        else:
+            options_aud.insert(0, f"Suggested: {clean_aud}")
 
-    if not detected_purpose:
-        question_flow.append({
-            "id": "purpose",
-            "q": "What is the main topic or purpose of this survey?",
-            "allow_text_input": True
-        })
+    question_flow.append({
+        "id": "audience",
+        "q": "Who is your audience for this survey?",
+        "options": options_aud
+    })
 
-    if not detected_touchpoint:
-        # Base touchpoint options
-        base_touchpoint_options = [
-            "Website",
-            "Mobile app",
-            "Store visit / Branch visit",
-            "Call center / Phone support",
-            "Email support",
-            "WhatsApp / Chat support",
-            "Delivery experience",
-            "Onboarding / Signup flow",
-            "Billing & payments",
-            "Other"
-        ]
-        options_tp = base_touchpoint_options.copy()
-        if ai_touchpoint_suggestion:
-            suggested_tp_label = f"Suggested: {ai_touchpoint_suggestion}"
-            if suggested_tp_label not in options_tp:
-                options_tp.insert(0, suggested_tp_label)
+    # 3. Purpose Question
+    purpose_q = {
+        "id": "purpose",
+        "q": "What is the main topic or purpose of this survey?",
+        "allow_text_input": True
+    }
+    if detected_purpose:
+        purpose_q["options"] = [detected_purpose]
 
-        question_flow.append({
-            "id": "touchpoint",
-            "q": "Which touchpoint is this survey primarily about?",
-            "options": options_tp,
-            "allow_text_input": True
-        })
+    question_flow.append(purpose_q)
 
-    # If NOTHING is missing → skip follow-up questions
-    if not question_flow:
-        return jsonify({
-            "skip_questions": True,
-            "question_flow": [],
-            "detected_survey_type": survey_type,
-            "detected_audience": detected_audience,
-            "detected_purpose": detected_purpose,
-            "detected_touchpoint": detected_touchpoint,
-            "original_user_input": user_input
-        })
+    # 4. Touchpoint Question
+    base_touchpoint_options = [
+        "Website",
+        "Mobile app",
+        "Store visit / Branch visit",
+        "Call center / Phone support",
+        "Email support",
+        "WhatsApp / Chat support",
+        "Delivery experience",
+        "Onboarding / Signup flow",
+        "Billing & payments",
+        "Other"
+    ]
+    options_tp = base_touchpoint_options.copy()
+    tp_hint = detected_touchpoint or ai_touchpoint_suggestion
+    if tp_hint:
+        clean_tp = tp_hint.replace("Suggested: ", "").strip()
+        if clean_tp in options_tp:
+            options_tp.remove(clean_tp)
+            options_tp.insert(0, clean_tp)
+        else:
+            options_tp.insert(0, f"Suggested: {clean_tp}")
 
-    # Otherwise, return only the missing questions
+    question_flow.append({
+        "id": "touchpoint",
+        "q": "Which touchpoint is this survey primarily about?",
+        "options": options_tp,
+        "allow_text_input": True
+    })
+
     return jsonify({
         "skip_questions": False,
         "question_flow": question_flow,
