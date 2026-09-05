@@ -2080,6 +2080,13 @@ async function startFlow(text) {
     return;
   }
 
+  // Handle Greeting or Invalid messages
+  if (resp.is_greeting && resp.greeting_message) {
+    appendMessage(resp.greeting_message, "bot");
+  } else if (resp.is_invalid && resp.invalid_message) {
+    appendMessage(resp.invalid_message, "bot");
+  }
+
   // Otherwise, follow-up questions for missing fields
   questionFlow = (resp.question_flow || []).map((q) => ({
     id: q.id || "",
@@ -2093,7 +2100,7 @@ async function startFlow(text) {
     return generateSurvey();
   }
 
-  const prefix = resp.summary_text ? `📝 <b>Detected:</b> ${resp.summary_text}<br>Please answer the missing details below:` : "📝 I need a few quick details to complete your survey setup…";
+  const prefix = resp.summary_text ? `📝 <b>Detected:</b> ${resp.summary_text}<br>Please answer the missing details below:` : "📝 Please answer the quick details below:";
   appendMessage(prefix, "bot");
   askNextQuestion();
 }
@@ -2195,13 +2202,19 @@ function askNextQuestion() {
 // HANDLE ANSWER
 // ===============================
 function handleAnswer(ans) {
+  const val = (ans || "").trim();
+  if (!val) {
+    appendMessage("⚠️ Please provide a valid response or select an option to continue.", "bot");
+    return;
+  }
+
   const q = questionFlow[currentQuestionIndex];
   const key = q.id || q.text || `q${currentQuestionIndex + 1}`;
 
-  appendMessage(escapeHtml(ans), "user");
+  appendMessage(escapeHtml(val), "user");
 
   // Save raw answer
-  collectedAnswers[key] = ans;
+  collectedAnswers[key] = val;
 
   // If this is one of the 4 core parameters, map it to surveyContext
   const idLower = (q.id || "").toLowerCase();
@@ -2252,11 +2265,14 @@ async function generateSurvey() {
   const res = await apiPost("/generate_survey", {
     user_input: originalUserInput,
     survey_type: surveyContext.survey_type || "general",
-    answers: collectedAnswers,   // backend ignores, but kept for future use
+    target_audience: surveyContext.audience || "",
+    survey_purpose: surveyContext.purpose || "",
+    touchpoint: surveyContext.touchpoint || "",
+    answers: collectedAnswers
   });
 
   if (!res.surveys || !res.surveys.length) {
-    appendMessage("⚠️ Could not generate templates. Try rephrasing your request.", "bot");
+    appendMessage("Could not generate templates. Try rephrasing your request.", "bot");
     return;
   }
 
@@ -2350,21 +2366,21 @@ generateMoreBtn.addEventListener("click", () => {
       appendMessage(`✨ Generating more templates for: ${area}`, "bot");
 
       const res = await apiPost("/generate_more_surveys", {
-          focus_area: area,
+        focus_area: area,
 
-          // main survey type from FIRST API
-          survey_type: surveyContext.survey_type || "general",
+        // main survey type from FIRST API
+        survey_type: surveyContext.survey_type || "general",
 
-          // full context from FIRST API (🔥 MUST match backend names)
-          context: {
-            original_user_input: originalUserInput,
-            detected_survey_type: surveyContext.survey_type,
-            detected_audience: surveyContext.audience,
-            detected_purpose: surveyContext.purpose,
-            detected_touchpoint: surveyContext.touchpoint,  // 🔥 FIXED
-            question_flow: [],
-            skip_questions: true
-          }
+        // full context from FIRST API (🔥 MUST match backend names)
+        context: {
+          original_user_input: originalUserInput,
+          detected_survey_type: surveyContext.survey_type,
+          detected_audience: surveyContext.audience,
+          detected_purpose: surveyContext.purpose,
+          detected_touchpoint: surveyContext.touchpoint,  // 🔥 FIXED
+          question_flow: [],
+          skip_questions: true
+        }
       });
 
 
@@ -2518,7 +2534,10 @@ quickEl.addEventListener("click", (e) => {
 
 sendBtn.addEventListener("click", () => {
   const txt = userInput.value.trim();
-  if (!txt) return;
+  if (!txt) {
+    appendMessage("⚠️ Please enter your survey requirement or select an option to get started.", "bot");
+    return;
+  }
   userInput.value = "";
 
   // If currently in an active question flow → treat input as answer to current question

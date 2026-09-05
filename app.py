@@ -11,8 +11,11 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app) # Enable CORS for all routes so external frontends can call APIs
 
-# --- Configuration: prefer setting OPENAI_API_KEY as an environment variable ---
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+# --- OpenAI Configuration (Loaded exclusively from .env) ---
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL")
+
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 OUTPUT_FILE = "saved_surveys.json"
 RESPONSES_FILE = "responses.json"
@@ -201,6 +204,24 @@ def clamp_duration(duration: str | None) -> str:
     return "2–2.5 mins"
 
 
+def extract_requested_question_count(text: str) -> int | None:
+    if not text:
+        return None
+    m = re.search(r"(\d+)\s*(?:questions?|q\b)", text, re.IGNORECASE)
+    if m:
+        try:
+            val = int(m.group(1))
+            if 1 <= val <= 20:
+                return val
+        except ValueError:
+            pass
+    words_map = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+    m2 = re.search(r"\b(one|two|three|four|five|six|seven|eight|nine|ten)\s*questions?", text, re.IGNORECASE)
+    if m2:
+        return words_map.get(m2.group(1).lower())
+    return None
+
+
 def enforce_survey_pattern(template: dict, topic_hint: str = "", default_max: int = 5) -> dict:
     """
     Enforces strict question pattern constraints on survey templates:
@@ -218,9 +239,11 @@ def enforce_survey_pattern(template: dict, topic_hint: str = "", default_max: in
     topic = topic_hint or "your recent experience"
     allowed_middle_scales = ["rating", "csat", "ces", "radio", "mcq"]
 
-    # Step 1: Ensure question count is at least 5 and trimmed to default_max (5 by default)
-    if len(questions) < 5:
-        while len(questions) < 5:
+    target_count = max(2, default_max)
+
+    # Step 1: Ensure question count matches target_count
+    if len(questions) < target_count:
+        while len(questions) < target_count:
             r_scale = random.choice(allowed_middle_scales)
             q_filler = {
                 "question": f"How would you rate your overall experience with {topic}?",
@@ -229,8 +252,8 @@ def enforce_survey_pattern(template: dict, topic_hint: str = "", default_max: in
             if r_scale in ["radio", "mcq"]:
                 q_filler["options"] = ["Very satisfied", "Satisfied", "Neutral", "Unsatisfied"]
             questions.append(q_filler)
-    elif len(questions) > default_max:
-        questions = questions[:default_max]
+    elif len(questions) > target_count:
+        questions = questions[:target_count]
 
     # Step 2: Ensure Question 1 (index 0) is NPS
     standard_nps_q = {
@@ -482,7 +505,7 @@ User request:
 
     try:
         resp = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=OPENAI_MODEL,
             timeout=15,
             messages=[
                 {
@@ -568,29 +591,153 @@ User request:
 
 
 # -----------------------
-# ROUTES
+# ROUTES & ERROR HANDLERS
 # -----------------------
+@app.errorhandler(400)
+def bad_request_error(e):
+    return jsonify({"error": "Bad Request", "message": "⚠️ Please provide valid survey details so we can create your template."}), 400
+
+@app.errorhandler(404)
+def not_found_error(e):
+    return jsonify({"error": "Not Found", "message": "⚠️ The requested survey feature was not found."}), 404
+
+@app.errorhandler(405)
+def method_not_allowed_error(e):
+    return jsonify({"error": "Method Not Allowed", "message": "⚠️ Invalid request method."}), 405
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    return jsonify({"error": "Internal Server Error", "message": "⚠️ Something went wrong while generating your survey. Please try again."}), 500
+
 @app.route("/")
 def home():
     return render_template("index.html")
 
 
-# ---------- UPDATED QUESTION FLOW (AI-only detection, with TOUCHPOINT) ----------
+def is_off_topic_question(text: str) -> bool:
+    clean = (text or "").strip().lower()
+    if not clean:
+        return False
+    
+    # If text contains survey keywords, it's NOT off-topic
+    survey_keywords = ["survey", "feedback", "nps", "csat", "ces", "rating", "question", "template", "poll", "review", "score", "promoter", "detractor", "satisfaction", "touchpoint", "audience", "customer", "employee", "client", "user", "create", "make", "build", "generate"]
+    if any(k in clean for k in survey_keywords):
+        return False
+
+    # Common off-topic question patterns
+    off_topic_patterns = [
+        r"^(who|what|where|when|why|how)\s+(is|are|was|were|do|does|did|to|can|will|should)\b",
+        r"\b(tell me|weather|capital|president|prime minister|code|script|recipe|sports|movie|song|game|joke|news)\b"
+    ]
+    for pat in off_topic_patterns:
+        if re.search(pat, clean):
+            return True
+            
+    return False
+
+
+def is_greeting_input(text: str) -> bool:
+    clean = (text or "").strip().lower()
+    if not clean:
+        return False
+    greetings = {
+        "hy", "hyy", "hyyy", "hi", "hii", "hiii", "hey", "heyy", "hello",
+        "hola", "greetings", "good morning", "good afternoon", "good evening", "namaste"
+    }
+    if clean in greetings:
+        return True
+    if re.match(r"^(h[eyiai]+|hello|greetings|good\s+(morning|afternoon|evening))\b", clean):
+        return True
+    return False
+
+
+def is_invalid_input(text: str) -> bool:
+    clean = (text or "").strip()
+    if not clean:
+        return True
+    # Pure punctuation or symbols
+    if re.match(r"^[\s\?\!\.\,\;\:\-\_\@\#\$\%\^\&\*\(\)\/]+$", clean):
+        return True
+    # Single character non-alphanumeric or keyboard smash (e.g. repeated single character like "aaaaa")
+    if len(set(clean.lower())) == 1 and len(clean) >= 3:
+        return True
+    # Pure numbers without context e.g. "123456"
+    if clean.isdigit():
+        return True
+    return False
+
+
+# ---------- UPDATED QUESTION FLOW (AI-only detection, with TOUCHPOINT & VALIDATION) ----------
 @app.route("/generate_question_flow", methods=["POST"])
 def generate_question_flow():
     """
     AI-first behavior:
-    - Analyze user_input for:
-        - survey_type (NPS/CSAT/CES/general)
-        - audience (dynamic)
-        - purpose/topic (dynamic)
-        - touchpoint (dynamic)
-    - Ask ONLY for the pieces that are missing.
-    - If everything is already present → skip follow-up questions and let
-      frontend jump directly to sample/template creation.
+    - Handle greetings (e.g., "hyy", "hello") warm response + initiate flow
+    - Validate invalid/empty input with clear user message & examples
+    - Ask for missing fields with concrete user examples
     """
     data = request.get_json(force=True) or {}
-    user_input = (data.get("user_input") or "").strip()
+    user_input = (data.get("user_input") or data.get("user_prompt") or "").strip()
+
+    # 1. Handle Greeting Inputs (e.g., "hyy", "hello", "hi")
+    if is_greeting_input(user_input):
+        question_flow = [
+            {
+                "id": "survey_type",
+                "q": "Which type of survey would you like to create?",
+                "options": ["NPS", "CSAT", "CES", "General / Not sure"]
+            },
+            {
+                "id": "audience",
+                "q": "Who is your target audience for this survey?",
+                "options": ["Customers", "Employees", "B2B", "Clients", "Users", "Learners", "Vendors", "Parents", "General users"]
+            },
+            {
+                "id": "purpose",
+                "q": "What is the main topic or purpose of this survey?",
+                "allow_text_input": True
+            },
+            {
+                "id": "touchpoint",
+                "q": "Which touchpoint or channel is this survey primarily about?",
+                "options": ["Website", "Mobile app", "Store visit / Branch visit", "Call center / Phone support", "Email support", "WhatsApp / Chat support", "Delivery experience", "Onboarding / Signup flow", "Billing & payments", "Other"],
+                "allow_text_input": True
+            }
+        ]
+        return jsonify({
+            "is_greeting": True,
+            "greeting_message": "👋 Hello! Welcome to Smart Survey Creator. Choose your survey details below or enter your survey idea to get started.",
+            "all_detected": False,
+            "skip_questions": False,
+            "question_flow": question_flow,
+            "detected_survey_type": None,
+            "detected_audience": None,
+            "detected_purpose": None,
+            "detected_touchpoint": None,
+            "original_user_input": user_input
+        })
+
+    # 2. Handle Off-topic or Invalid / Gibberish Inputs
+    if is_off_topic_question(user_input) or is_invalid_input(user_input):
+        question_flow = [
+            {
+                "id": "survey_type",
+                "q": "Which type of survey would you like to create?",
+                "options": ["NPS", "CSAT", "CES", "General / Not sure"]
+            }
+        ]
+        return jsonify({
+            "is_invalid": True,
+            "invalid_message": "⚠️ Please provide a domain-specific survey topic or requirement.",
+            "all_detected": False,
+            "skip_questions": False,
+            "question_flow": question_flow,
+            "detected_survey_type": None,
+            "detected_audience": None,
+            "detected_purpose": None,
+            "detected_touchpoint": None,
+            "original_user_input": user_input
+        })
 
     # Explicit values from payload (user might have selected these in UI already)
     requested_type_raw = (data.get("survey_type") or "").strip().lower()
@@ -622,9 +769,8 @@ def generate_question_flow():
     elif ai_survey_type in ["nps", "csat", "ces", "general"]:
         survey_type = ai_survey_type
     else:
-        survey_type = None  # DO NOT default to general here
+        survey_type = None
 
-    # Type is known only if it is explicitly NPS/CSAT/CES
     type_known = survey_type in ["nps", "csat", "ces"]
 
     # --- Audience / purpose / touchpoint: payload overrides AI ---
@@ -632,8 +778,6 @@ def generate_question_flow():
     detected_purpose = purpose_from_payload or ai_purpose
     detected_touchpoint = touchpoint_from_payload or ai_touchpoint
 
-    # --- Determine known vs missing parameters ---
-    type_known = survey_type in ["nps", "csat", "ces"]
     audience_known = bool(detected_audience)
     purpose_known = bool(detected_purpose)
     touchpoint_known = bool(detected_touchpoint)
@@ -664,11 +808,11 @@ def generate_question_flow():
                 options_aud.remove(clean_aud)
                 options_aud.insert(0, clean_aud)
             else:
-                options_aud.insert(0, f"Suggested: {clean_aud}")
+                options_aud.insert(0, clean_aud)
 
         question_flow.append({
             "id": "audience",
-            "q": "Who is your audience for this survey?",
+            "q": "Who is your target audience for this survey?",
             "options": options_aud
         })
 
@@ -695,11 +839,11 @@ def generate_question_flow():
                 options_tp.remove(clean_tp)
                 options_tp.insert(0, clean_tp)
             else:
-                options_tp.insert(0, f"Suggested: {clean_tp}")
+                options_tp.insert(0, clean_tp)
 
         question_flow.append({
             "id": "touchpoint",
-            "q": "Which touchpoint is this survey primarily about?",
+            "q": "Which touchpoint or channel is this survey primarily about?",
             "options": options_tp,
             "allow_text_input": True
         })
@@ -729,37 +873,59 @@ def generate_question_flow():
 @app.route("/generate_survey", methods=["POST"])
 def generate_survey():
     data = request.get_json() or {}
-    user_input = (data.get("user_input") or "").strip()
+    user_input = (data.get("user_input") or data.get("user_prompt") or "").strip()
     requested_type_raw = (data.get("survey_type") or "").strip().lower()
 
-    if not user_input:
-        return jsonify({"error": "Missing user_input"}), 400
+    answers = data.get("answers") or {}
+    purpose = (data.get("target_purpose") or data.get("survey_purpose") or answers.get("purpose") or "").strip()
+    touchpoint = (data.get("touchpoint") or answers.get("touchpoint") or "").strip()
+    audience = (data.get("target_audience") or data.get("audience") or answers.get("audience") or "").strip()
+
+    if not user_input and not (purpose or touchpoint or audience):
+        return jsonify({
+            "error": "Missing user_input",
+            "message": "⚠️ Please provide a survey topic, purpose, touchpoint, or target audience to generate survey templates."
+        }), 400
+
+    # Determine effective survey topic
+    if is_greeting_input(user_input) or is_invalid_input(user_input) or (purpose or touchpoint or audience):
+        topic_parts = []
+        if purpose:
+            topic_parts.append(purpose)
+        if touchpoint:
+            topic_parts.append(f"for {touchpoint}")
+        if audience:
+            topic_parts.append(f"targeting {audience}")
+        topic = " ".join(topic_parts) if topic_parts else "Customer Feedback & Satisfaction"
+    else:
+        topic = user_input
 
     # survey_type: prefer explicit payload, else AI, else general
     survey_type = None
     if requested_type_raw in ["nps", "csat", "ces", "general"]:
         survey_type = requested_type_raw
     else:
-        ai_result = analyze_user_input_with_openai(user_input)
+        ai_result = analyze_user_input_with_openai(topic)
         ai_type = ai_result.get("survey_type")
         if ai_type in ["nps", "csat", "ces", "general"]:
             survey_type = ai_type
         else:
             survey_type = "general"
 
+    req_count = extract_requested_question_count(user_input) or extract_requested_question_count(topic) or 5
     processed_templates = []
 
     # Prompt for GPT (templates generation)
     prompt = f"""
 You are an elite CX and Market Research AI Expert.
-Generate 3 distinct, highly tailored survey templates for the topic: "{user_input}"
+Generate 3 distinct, highly tailored survey templates for the topic: "{topic}"
 Target Survey Category: "{survey_type.upper()} Survey Template".
 
 RULES & STRUCTURE:
 - STRICT JSON array ONLY (no markdown fences, no conversational text).
 - Each template object MUST have: "title", "purpose", "duration", "questions".
 - "duration" MUST be around 2–2.5 minutes (e.g., "2–2.5 mins").
-- DEFAULT QUESTION COUNT RULE: Each template MUST contain EXACTLY 5 domain-specific, actionable questions (Q1 = NPS, Q2–Q4 = Middle scales, Q5 = Text).
+- QUESTION COUNT RULE: Each template MUST contain EXACTLY {req_count} domain-specific, actionable questions (Q1 = NPS, middle questions = feedback scales, Q{req_count} = Text).
 
 QUESTION PATTERN RULES (MANDATORY):
 1. FIRST question (Position 1): MUST be an NPS recommendation scale ("scale_type": "nps", 0–10 scale).
@@ -770,7 +936,7 @@ QUESTION PATTERN RULES (MANDATORY):
 
 QUESTION FORMAT:
 - Each question object must have:
-    - "question": clear, relevant question text tailored to "{user_input}"
+    - "question": clear, relevant question text tailored to "{topic}"
     - "scale_type": one of ["nps","csat","ces","rating","text","radio","mcq","matrix","file"]
 - For any question with "scale_type": "radio" or "mcq", include an "options" array of realistic choices.
 - Avoid duplicate question intent within a single template.
@@ -778,7 +944,7 @@ QUESTION FORMAT:
 
     try:
         resp = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=OPENAI_MODEL,
             timeout=15,
             messages=[
                 {"role": "system", "content": "You are an elite CX Survey AI Architect. Output a valid JSON array of templates ONLY. No explanations."},
@@ -800,7 +966,7 @@ QUESTION FORMAT:
 
     if not templates:
         print("[WARNING] OpenAI template generation returned empty or failed. Using fallback template engine.")
-        templates = build_fallback_templates(survey_type, user_input)
+        templates = build_fallback_templates(survey_type, topic)
 
     # Clean and enforce constraints on each template
     for t in templates:
@@ -862,7 +1028,7 @@ QUESTION FORMAT:
 
     # Strictly enforce pattern: 1st=NPS, last=Text, single NPS, single Text
     processed_templates = [
-        enforce_survey_pattern(t, topic_hint=user_input)
+        enforce_survey_pattern(t, topic_hint=topic, default_max=req_count)
         for t in processed_templates
     ]
 
@@ -964,7 +1130,7 @@ DO NOT output text before/after JSON.
 
     try:
         resp = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=OPENAI_MODEL,
             timeout=15,
             messages=[
                 {"role": "system", "content": "You are a survey expert. Output a valid JSON array of templates ONLY. No markdown, no explanations."},
@@ -1093,7 +1259,7 @@ def customize_selected_template():
                 """
 
                 response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model=OPENAI_MODEL,
                     timeout=15,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.7,
