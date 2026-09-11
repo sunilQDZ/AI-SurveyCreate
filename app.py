@@ -773,12 +773,82 @@ def validate_input():
     data = request.get_json(force=True, silent=True) or {}
     if not isinstance(data, dict):
         data = {}
-    text = (data.get("text") or data.get("user_input") or "").strip()
-    is_valid = is_valid_input_ai(text)
+    text = (data.get("text") or data.get("user_input") or data.get("answer") or "").strip()
+    question_id = (data.get("question_id") or data.get("field_type") or "").strip().lower()
+
+    if not text:
+        return jsonify({
+            "is_valid": False,
+            "input": "",
+            "message": "⚠️ Input cannot be empty. Please provide a valid response.",
+            "question": None,
+            "options": []
+        })
+
+    is_greeting = is_greeting_input(text)
+    is_invalid = is_invalid_input(text)
+
+    # Specific question field validation
+    if question_id == "survey_type":
+        low = text.lower()
+        valid_types = ["nps", "csat", "ces", "general", "not sure"]
+        mapped = any(t in low for t in valid_types) or not is_invalid
+        if is_greeting or not mapped:
+            return jsonify({
+                "is_valid": False,
+                "input": text,
+                "message": f"⚠️ \"{text}\" is not a valid survey type. Please choose one of the options below (NPS, CSAT, CES, General) or type a valid requirement.",
+                "question": "Which type of survey would you like to create?",
+                "options": ["NPS", "CSAT", "CES", "General / Not sure"]
+            })
+
+    elif question_id == "audience":
+        if is_greeting or is_invalid:
+            return jsonify({
+                "is_valid": False,
+                "input": text,
+                "message": f"⚠️ \"{text}\" is not a valid target audience. Please select an option below or type a valid audience (e.g., Customers, Employees, Students).",
+                "question": "Who is your target audience for this survey?",
+                "options": ["Customers", "Employees", "B2B", "Clients", "Users", "Learners", "Vendors", "Parents", "General users"]
+            })
+
+    elif question_id == "purpose":
+        if is_greeting or is_invalid:
+            return jsonify({
+                "is_valid": False,
+                "input": text,
+                "message": f"⚠️ \"{text}\" is not a valid survey purpose. Please enter a clear survey topic or purpose (e.g., Customer Satisfaction, Service Feedback).",
+                "question": "What is the main topic or purpose of this survey?",
+                "options": []
+            })
+
+    elif question_id == "touchpoint":
+        if is_greeting or is_invalid:
+            return jsonify({
+                "is_valid": False,
+                "input": text,
+                "message": f"⚠️ \"{text}\" is not a valid touchpoint. Please select an option below or enter a valid channel (e.g., Website, Mobile App, Store Visit).",
+                "question": "Which touchpoint or channel is this survey primarily about?",
+                "options": ["Website", "Mobile app", "Store visit / Branch visit", "Call center / Phone support", "Email support", "WhatsApp / Chat support", "Delivery experience", "Onboarding / Signup flow", "Billing & payments", "Other"]
+            })
+
+    # General validation fallback
+    if is_greeting:
+        return jsonify({
+            "is_valid": False,
+            "input": text,
+            "message": f"⚠️ \"{text}\" is a greeting. Please enter a specific survey requirement or topic.",
+            "question": None,
+            "options": []
+        })
+
+    is_valid = not is_invalid
     return jsonify({
         "is_valid": is_valid,
         "input": text,
-        "message": None if is_valid else f"⚠️ \"{text}\" is not a valid survey topic or requirement. Please enter a meaningful input."
+        "message": None if is_valid else f"⚠️ \"{text}\" is not a valid survey topic or requirement. Please enter a meaningful input.",
+        "question": None,
+        "options": []
     })
 
 
@@ -910,7 +980,9 @@ def generate_question_flow():
         question_flow.append({
             "id": "survey_type",
             "q": "Which type of survey would you like to create?",
-            "options": st_options
+            "question": "Which type of survey would you like to create?",
+            "options": st_options,
+            "validation_message": "⚠️ Please select one of the options (NPS, CSAT, CES, General) or type a valid requirement."
         })
 
     # 2. Audience Question (if missing)
@@ -931,7 +1003,9 @@ def generate_question_flow():
         question_flow.append({
             "id": "audience",
             "q": "Who is your target audience for this survey?",
-            "options": options_aud
+            "question": "Who is your target audience for this survey?",
+            "options": options_aud,
+            "validation_message": "⚠️ Please select an option or type a valid target audience."
         })
 
     # 3. Purpose Question (if missing)
@@ -939,7 +1013,9 @@ def generate_question_flow():
         question_flow.append({
             "id": "purpose",
             "q": "What is the main topic or purpose of this survey?",
-            "allow_text_input": True
+            "question": "What is the main topic or purpose of this survey?",
+            "allow_text_input": True,
+            "validation_message": "⚠️ Please enter a clear topic or purpose for the survey."
         })
 
     # 4. Touchpoint Question (if missing)
@@ -962,8 +1038,10 @@ def generate_question_flow():
         question_flow.append({
             "id": "touchpoint",
             "q": "Which touchpoint or channel is this survey primarily about?",
+            "question": "Which touchpoint or channel is this survey primarily about?",
             "options": options_tp,
-            "allow_text_input": True
+            "allow_text_input": True,
+            "validation_message": "⚠️ Please select an option or enter a valid channel/touchpoint."
         })
 
     # Summary of detected parameters

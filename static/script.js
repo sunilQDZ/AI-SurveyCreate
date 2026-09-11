@@ -2263,6 +2263,9 @@ function repromptCurrentQuestion() {
   const q = questionFlow[currentQuestionIndex];
   if (!q) return;
 
+  // Re-display question title before options for clarity
+  appendMessage(`❓ ${escapeHtml(q.text)}`, "bot");
+
   if (Array.isArray(q.options) && q.options.length) {
     const box = document.createElement("div");
     box.className = "msg options-list bot";
