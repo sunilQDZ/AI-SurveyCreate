@@ -2208,9 +2208,22 @@ function askNextQuestion() {
   }
 }
 
+function isGreetingText(text) {
+  const clean = String(text || "").trim().toLowerCase();
+  if (!clean) return false;
+  const greetings = new Set([
+    "hy", "hyy", "hyyy", "hi", "hii", "hiii", "hey", "heyy", "heyyy", "hello",
+    "hola", "greetings", "good morning", "good afternoon", "good evening", "namaste", "yo", "sup"
+  ]);
+  if (greetings.has(clean)) return true;
+  return /^(h[eyiai]+|hello|greetings|good\s+(morning|afternoon|evening))\b/i.test(clean);
+}
+
 function isInvalidInputText(text) {
   const clean = String(text || "").trim();
   if (!clean) return true;
+
+  if (isGreetingText(clean)) return true;
 
   // Pure symbols or punctuation
   if (/^[\s\?\!\.\,\;\:\-\_\@\#\$\%\^\&\*\(\)\/\<\>\\\"\'\`\~\+\=\|\[\]\{\}]+$/.test(clean)) return true;
@@ -2234,8 +2247,8 @@ function isInvalidInputText(text) {
     // 4+ consecutive consonants e.g. "gfhdfjh", "sdgsdh", "segfhdfjh"
     if (/[bcdfghjklmnpqrstvwxz]{4,}/.test(lettersOnly)) return true;
 
-    // 4+ letters in word with no standard vowels (a, e, i, o, u)
-    if (lettersOnly.length >= 4 && !/[aeiou]/.test(lettersOnly) && !allowedVowelless.has(lettersOnly)) {
+    // 2+ letters in word with no standard vowels (a, e, i, o, u)
+    if (lettersOnly.length >= 2 && !/[aeiou]/.test(lettersOnly) && !allowedVowelless.has(lettersOnly)) {
       return true;
     }
   }
@@ -2313,6 +2326,13 @@ function handleAnswer(ans) {
 
   const key = q.id || q.text || `q${currentQuestionIndex + 1}`;
   const idLower = (q.id || "").toLowerCase();
+
+  if (isGreetingText(val)) {
+    appendMessage(escapeHtml(val), "user");
+    appendMessage(`⚠️ <b>"${escapeHtml(val)}"</b> is a greeting. Please select an option below or type a specific answer to continue setting up your survey.`, "bot");
+    repromptCurrentQuestion();
+    return;
+  }
 
   // Validate answer per question type before accepting
   if (idLower === "survey_type") {

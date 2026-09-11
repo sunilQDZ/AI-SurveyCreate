@@ -1001,18 +1001,18 @@ def generate_survey():
     touchpoint = (data.get("touchpoint") or answers.get("touchpoint") or "").strip()
     audience = (data.get("target_audience") or data.get("audience") or answers.get("audience") or "").strip()
 
-    # Filter out any invalid/gibberish values
-    if is_invalid_input(purpose):
+    # Filter out any greeting/invalid/gibberish values
+    if is_greeting_input(purpose) or is_invalid_input(purpose):
         purpose = ""
-    if is_invalid_input(touchpoint):
+    if is_greeting_input(touchpoint) or is_invalid_input(touchpoint):
         touchpoint = ""
-    if is_invalid_input(audience):
+    if is_greeting_input(audience) or is_invalid_input(audience):
         audience = ""
 
-    if not user_input and not (purpose or touchpoint or audience):
+    if (not user_input or is_greeting_input(user_input) or is_invalid_input(user_input)) and not (purpose or touchpoint or audience):
         return jsonify({
             "error": "Missing user_input",
-            "message": "⚠️ Please provide a survey topic, purpose, touchpoint, or target audience to generate survey templates."
+            "message": "⚠️ Please select an option or specify a valid survey topic, purpose, or target audience to generate survey templates."
         }), 400
 
     # Determine effective survey topic
