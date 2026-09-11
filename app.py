@@ -2,7 +2,7 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from dotenv import load_dotenv
-import json, os, re, random
+import json, os, re, random, unicodedata
 from datetime import datetime
 from openai import OpenAI
 
@@ -651,20 +651,135 @@ def is_greeting_input(text: str) -> bool:
     return False
 
 
-def is_invalid_input(text: str) -> bool:
+def is_invalid_input_heuristic(text: str) -> bool:
+    """
+    Fast local safety fallback when AI API is unavailable.
+    Checks structural invalidity (empty, symbols, single char repeat, pure digits, 4+ consonant smashes).
+    """
     clean = (text or "").strip()
     if not clean:
         return True
-    # Pure punctuation or symbols
-    if re.match(r"^[\s\?\!\.\,\;\:\-\_\@\#\$\%\^\&\*\(\)\/]+$", clean):
+
+    clean_norm = unicodedata.normalize("NFKD", clean).encode("ASCII", "ignore").decode("utf-8") or clean
+
+    # Pure symbols or punctuation
+    if re.match(r"^[\s\?\!\.\,\;\:\-\_\@\#\$\%\^\&\*\(\)\/\<\>\\\"\'\`\~\+\=\|\[\]\{\}]+$", clean_norm):
         return True
-    # Single character non-alphanumeric or keyboard smash (e.g. repeated single character like "aaaaa")
-    if len(set(clean.lower())) == 1 and len(clean) >= 3:
+    # Single character repeated e.g. "aaaaa", "zzzzz"
+    if len(set(clean_norm.lower())) == 1 and len(clean_norm) >= 3:
         return True
     # Pure numbers without context e.g. "123456"
-    if clean.isdigit():
+    if clean_norm.isdigit():
         return True
+    # Must contain at least 1 letter overall
+    letters_all = re.sub(r"[^a-zA-Z]", "", clean_norm)
+    if len(letters_all) < 1:
+        return True
+
+    words = clean_norm.lower().split()
+    allowed_vowelless = {"rhythm", "lynx", "nymph", "slyly", "dryly", "wryly", "by", "my", "try", "fly", "sky", "why", "cry", "fry", "dry"}
+    for w in words:
+        letters_only = re.sub(r"[^a-z]", "", w)
+        if not letters_only:
+            continue
+        # 4+ consecutive consonants in a single word e.g. "gfhdfjh", "sdgsdh", "segfhdfjh"
+        if re.search(r"[bcdfghjklmnpqrstvwxz]{4,}", letters_only):
+            return True
+        # 4+ letters with no standard vowels
+        if len(letters_only) >= 4 and not re.search(r"[aeiou]", letters_only) and letters_only not in allowed_vowelless:
+            return True
+
     return False
+
+
+
+def is_invalid_input(text: str) -> bool:
+    return not is_valid_input_ai(text)
+
+
+def is_valid_input_ai(text: str) -> bool:
+    """
+    AI-powered validator using OpenAI to check if text is a meaningful,
+    valid survey topic/requirement or response vs gibberish/nonsense/off-topic.
+    """
+    clean = (text or "").strip()
+    if not clean:
+        return False
+
+    # Normalize accented characters e.g. "Café" -> "Cafe"
+    clean_norm = unicodedata.normalize("NFKD", clean).encode("ASCII", "ignore").decode("utf-8")
+    if not clean_norm:
+        clean_norm = clean
+
+    # Fast local checks for pure symbols, single char repeat, or pure numbers
+    if re.match(r"^[\s\?\!\.\,\;\:\-\_\@\#\$\%\^\&\*\(\)\/\<\>\\\"\'\`\~\+\=\|\[\]\{\}]+$", clean_norm):
+        return False
+    if len(set(clean_norm.lower())) == 1 and len(clean_norm) >= 3:
+        return False
+    if clean_norm.isdigit():
+        return False
+    letters_all = re.sub(r"[^a-zA-Z]", "", clean_norm)
+    if len(letters_all) < 1:
+        return False
+
+    # AI validation via OpenAI
+    prompt = f"""
+Evaluate if the following user input is a MEANINGFUL, valid survey topic, requirement, or answer.
+
+Return ONLY this JSON object:
+{{"is_valid": true | false, "reason": "brief reason"}}
+
+RULES FOR `is_valid`:
+- Set `is_valid` to FALSE if the text is:
+  1) Random keyboard smash, gibberish, or nonsense letters (e.g., "wer", "qwer", "fdfnhndfn", "sdgsdh", "asdfgh", "zxcvb", "qwerty").
+  2) Completely off-topic question or statement (e.g., "What is the weather today?", "Who is the president", "Tell me a joke").
+  3) Meaningless random character sequences or non-words.
+
+- Set `is_valid` to TRUE if the text is:
+  1) A meaningful survey domain topic, requirement, or concept (e.g., "Customer satisfaction", "Mobile app experience", "Café feedback", "Store visit", "Education department").
+  2) Valid domain short words, acronyms, or common terms (e.g., "nps", "csat", "ces", "app", "web", "pay", "tax", "cx", "ux", "ui", "b2b", "food", "help", "work", "store", "chat", "call").
+  3) Any survey refinement or customization instruction (e.g., "i want 7 questions", "add questions about price", "make it shorter", "focus on customer support", "change middle questions").
+
+
+User Input:
+\"\"\"{clean}\"\"\"
+"""
+    try:
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            timeout=8,
+            messages=[
+                {"role": "system", "content": "You evaluate input validity for a survey builder application. Respond with strict JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.0,
+            max_tokens=100
+        )
+        content = resp.choices[0].message.content.strip()
+        m = re.search(r"\{.*\}", content, re.DOTALL)
+        if m:
+            data = json.loads(m.group())
+            return bool(data.get("is_valid", False))
+    except Exception as e:
+        print("[WARNING] AI input validation API call failed/timed out, using heuristic fallback:", e)
+
+    # Fallback to local heuristic if API fails/timeouts
+    return not is_invalid_input_heuristic(clean)
+
+
+
+@app.route("/validate_input", methods=["POST"])
+def validate_input():
+    data = request.get_json(force=True, silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
+    text = (data.get("text") or data.get("user_input") or "").strip()
+    is_valid = is_valid_input_ai(text)
+    return jsonify({
+        "is_valid": is_valid,
+        "input": text,
+        "message": None if is_valid else f"⚠️ \"{text}\" is not a valid survey topic or requirement. Please enter a meaningful input."
+    })
 
 
 # ---------- UPDATED QUESTION FLOW (AI-only detection, with TOUCHPOINT & VALIDATION) ----------
@@ -676,7 +791,9 @@ def generate_question_flow():
     - Validate invalid/empty input with clear user message & examples
     - Ask for missing fields with concrete user examples
     """
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
     user_input = (data.get("user_input") or data.get("user_prompt") or "").strip()
 
     # 1. Handle Greeting Inputs (e.g., "hyy", "hello", "hi")
@@ -717,8 +834,8 @@ def generate_question_flow():
             "original_user_input": user_input
         })
 
-    # 2. Handle Off-topic or Invalid / Gibberish Inputs
-    if is_off_topic_question(user_input) or is_invalid_input(user_input):
+    # 2. Handle Off-topic or Invalid / Gibberish Inputs (Using AI Validation)
+    if is_off_topic_question(user_input) or not is_valid_input_ai(user_input):
         question_flow = [
             {
                 "id": "survey_type",
@@ -738,6 +855,7 @@ def generate_question_flow():
             "detected_touchpoint": None,
             "original_user_input": user_input
         })
+
 
     # Explicit values from payload (user might have selected these in UI already)
     requested_type_raw = (data.get("survey_type") or "").strip().lower()
@@ -872,7 +990,9 @@ def generate_question_flow():
 # ---------- MAIN TEMPLATE GENERATION ----------
 @app.route("/generate_survey", methods=["POST"])
 def generate_survey():
-    data = request.get_json() or {}
+    data = request.get_json(force=True, silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
     user_input = (data.get("user_input") or data.get("user_prompt") or "").strip()
     requested_type_raw = (data.get("survey_type") or "").strip().lower()
 
@@ -880,6 +1000,14 @@ def generate_survey():
     purpose = (data.get("target_purpose") or data.get("survey_purpose") or answers.get("purpose") or "").strip()
     touchpoint = (data.get("touchpoint") or answers.get("touchpoint") or "").strip()
     audience = (data.get("target_audience") or data.get("audience") or answers.get("audience") or "").strip()
+
+    # Filter out any invalid/gibberish values
+    if is_invalid_input(purpose):
+        purpose = ""
+    if is_invalid_input(touchpoint):
+        touchpoint = ""
+    if is_invalid_input(audience):
+        audience = ""
 
     if not user_input and not (purpose or touchpoint or audience):
         return jsonify({
@@ -1053,11 +1181,24 @@ def generate_more_surveys():
     Generate 3 short survey templates based on a focus area.
     Uses ALL wanted context from the first API: generate_question_flow.
     """
-    data = request.get_json() or {}
+    data = request.get_json(force=True, silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
 
-    focus_area = (data.get("focus_area") or "").strip()
+    focus_area = (
+        data.get("focus_area")
+        or data.get("user_input")
+        or data.get("prompt")
+        or data.get("refinement")
+        or ""
+    ).strip()
     if not focus_area:
-        return jsonify({"error": "Missing focus_area"}), 400
+        return jsonify({"error": "Missing focus_area", "message": "⚠️ Please enter a focus area for generating more survey variations."}), 400
+
+
+    if not is_valid_input_ai(focus_area):
+        return jsonify({"error": "Invalid focus_area", "message": f"⚠️ \"{focus_area}\" is not a valid focus area. Please enter a clear requirement (e.g., Food Quality, 7 questions, Pricing)."}), 400
+
 
     # FRONTEND context from generate_question_flow
     ctx = data.get("context") or {}
@@ -1081,6 +1222,13 @@ def generate_more_surveys():
 
     # Survey type ALWAYS from first API context
     survey_type = detected_survey_type if detected_survey_type in ["nps", "csat", "ces", "general"] else "general"
+
+    # Extract requested question count from focus_area or original request (default to 5)
+    req_count = (
+        extract_requested_question_count(focus_area)
+        or extract_requested_question_count(original_user_input)
+        or 5
+    )
 
     prompt = f"""
 You are a CX survey expert.
@@ -1111,7 +1259,7 @@ STRICT RULES:
     "purpose"
     "duration"
     "questions"
-- DEFAULT QUESTION COUNT RULE: Each template MUST contain EXACTLY 5 questions (Q1 = NPS, Q2–Q4 = Middle scales, Q5 = Text).
+- QUESTION COUNT RULE: Each template MUST contain EXACTLY {req_count} questions (Q1 = NPS, middle questions = Q2 to Q{req_count - 1}, Q{req_count} = Text).
 - QUESTION PATTERN RULES (CRITICAL):
     1. FIRST question MUST be scale_type "nps" (0–10 recommendation).
     2. LAST question MUST be scale_type "text" (open-ended feedback).
@@ -1155,11 +1303,12 @@ DO NOT output text before/after JSON.
         print("[WARNING] Using fallback template engine for generate_more_surveys.")
         templates = build_fallback_templates(survey_type, focus_area or original_user_input)
 
-    # Enforce question pattern on each template
+    # Enforce question pattern and requested question count on each template
     templates = [
-        enforce_survey_pattern(t, topic_hint=focus_area or original_user_input)
+        enforce_survey_pattern(t, topic_hint=focus_area or original_user_input, default_max=req_count)
         for t in templates
     ]
+
 
     # Clamp duration
     for t in templates:
@@ -1186,14 +1335,20 @@ def customize_selected_template():
     """
     import re
 
-    data = request.get_json() or {}
+    data = request.get_json(force=True, silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
     templates = data.get("templates", [])
+    if not isinstance(templates, list):
+        templates = []
     choice = (data.get("choice") or "").lower()
     action = (data.get("action") or "").lower()
     focus_area = (data.get("focus_area") or "").strip()
     complexity = (data.get("complexity") or "").strip()
     scale_action = (data.get("scale_action") or "").lower()
     scale_changes = data.get("scale_changes", {}) or {}
+    if not isinstance(scale_changes, dict):
+        scale_changes = {}
     remove_input = (data.get("remove_input") or "").strip()
 
     if not templates or not choice:
@@ -1205,6 +1360,9 @@ def customize_selected_template():
         selected = templates[index]
     except Exception:
         return jsonify({"error": "Invalid template choice format."}), 400
+
+    if not selected or not isinstance(selected, dict):
+        return jsonify({"error": "Invalid template format."}), 400
 
     questions = selected.get("questions", [])
     title = selected.get("title", "General Feedback")
@@ -1404,10 +1562,12 @@ def customize_selected_template():
 # ---------- FINALIZE ----------
 @app.route("/finalize_template", methods=["POST"])
 def finalize_template():
-    data = request.get_json() or {}
+    data = request.get_json(force=True, silent=True) or {}
+    if not isinstance(data, dict):
+        data = {}
     final_template = data.get("final_template")
-    if not final_template:
-        return jsonify({"error": "Missing final_template"}), 400
+    if not final_template or not isinstance(final_template, dict):
+        return jsonify({"error": "Missing or invalid final_template"}), 400
 
     template_id = datetime.now().strftime("%Y%m%d%H%M%S")
     os.makedirs("finalized_templates", exist_ok=True)

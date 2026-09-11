@@ -1,12 +1,15 @@
 from flask import Flask, request, jsonify, render_template
+from dotenv import load_dotenv
 import json, os, re
 from datetime import datetime
 import openai
 
+load_dotenv()
 
 app = Flask(__name__)
 
-openai.api_key = os.getenv("OPENAI_API_KEY", "")
+openai.api_key = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL")
 
 OUTPUT_FILE = "saved_surveys.json"
 RESPONSES_FILE = "responses.json"

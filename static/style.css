@@ -58,11 +58,9 @@ body {
   justify-content: space-between;
   padding: 10px 14px;
   border-radius: var(--radius-lg);
-  background: linear-gradient(
-      120deg,
+  background: linear-gradient(120deg,
       rgba(15, 23, 42, 0.9),
-      rgba(15, 23, 42, 0.96)
-    ),
+      rgba(15, 23, 42, 0.96)),
     radial-gradient(circle at top left, rgba(236, 72, 153, 0.24), transparent 55%),
     radial-gradient(circle at top right, rgba(129, 140, 248, 0.26), transparent 55%);
   box-shadow: var(--shadow-soft);
@@ -80,14 +78,12 @@ body {
   width: 46px;
   height: 46px;
   border-radius: 16px;
-  background: conic-gradient(
-    from 180deg,
-    #4c1d95,
-    #7c3aed,
-    #22d3ee,
-    #ec4899,
-    #8b5cf6
-  );
+  background: conic-gradient(from 180deg,
+      #4c1d95,
+      #7c3aed,
+      #22d3ee,
+      #ec4899,
+      #8b5cf6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -155,11 +151,9 @@ body {
 
 .panel {
   border-radius: var(--radius-lg);
-  background: linear-gradient(
-      145deg,
+  background: linear-gradient(145deg,
       rgba(15, 23, 42, 0.95),
-      rgba(15, 23, 42, 0.98)
-    );
+      rgba(15, 23, 42, 0.98));
   border: 1px solid rgba(148, 163, 184, 0.35);
   box-shadow: var(--shadow-soft);
   padding: 12px 14px 14px;
@@ -185,6 +179,7 @@ body {
 .template-list::-webkit-scrollbar {
   width: 6px;
 }
+
 .chat-window::-webkit-scrollbar-thumb,
 .template-list::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.5);
@@ -389,9 +384,65 @@ button:disabled {
   background: radial-gradient(circle at top left, rgba(129, 140, 248, 0.28), transparent 65%),
     rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(129, 140, 248, 0.6);
-  padding: 8px 10px;
+  padding: 10px 12px;
   box-shadow: 0 12px 26px rgba(15, 23, 42, 0.7);
   font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.template-card.selected {
+  border-color: var(--accent-1);
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.45);
+  background: radial-gradient(circle at top left, rgba(139, 92, 246, 0.35), transparent 70%),
+    rgba(15, 23, 42, 0.98);
+}
+
+.template-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.template-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.question-list {
+  padding-left: 18px;
+  margin: 6px 0;
+}
+
+.question-list li {
+  margin-bottom: 6px;
+}
+
+.preview-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+  margin-bottom: 4px;
+}
+
+.preview-chip {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: var(--text-muted);
+}
+
+.chip.active-select {
+  background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+  color: #fff;
+  border-color: transparent;
 }
 
 .template-card .small {
@@ -421,10 +472,12 @@ button:disabled {
   font-size: 20px;
   margin-bottom: 4px;
 }
+
 .empty-title {
   font-size: 13px;
   font-weight: 500;
 }
+
 .empty-text {
   font-size: 12px;
   color: var(--text-muted);
@@ -462,6 +515,7 @@ button:disabled {
   .main-grid {
     grid-template-columns: 1fr;
   }
+
   .preview-panel {
     order: 2;
   }
@@ -472,9 +526,11 @@ button:disabled {
     flex-direction: column;
     align-items: flex-start;
   }
+
   .user-pill {
     align-self: flex-end;
   }
+
   .chat-input-row {
     flex-wrap: wrap;
   }
