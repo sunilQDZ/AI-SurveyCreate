@@ -2443,9 +2443,10 @@ generateMoreBtn.addEventListener("click", () => {
     if (e.key === "Enter" && inp.value.trim()) {
       const area = inp.value.trim();
 
-      if (isInvalidInputText(area)) {
+      const valRes = await apiPost("/validate_input", { text: area, question_id: "purpose" });
+      if (valRes.is_valid === false) {
         appendMessage(escapeHtml(area), "user");
-        appendMessage(`⚠️ <b>"${escapeHtml(area)}"</b> is not a valid focus area. Please enter a clear requirement or focus topic (e.g., Food Quality, Customer Support, 7 questions).`, "bot");
+        appendMessage(valRes.message || "⚠️ Invalid focus area.", "bot");
         inp.value = "";
         inp.focus();
         return;
@@ -2638,18 +2639,18 @@ quickEl.addEventListener("click", (e) => {
 });
 
 sendBtn.addEventListener("click", async () => {
+  if (isGenerating) return;
+
   const txt = userInput.value.trim();
-  if (!txt) {
-    appendMessage("⚠️ Please enter your survey requirement or select an option to get started.", "bot");
-    return;
-  }
-
-  if (isGenerating) {
-    appendMessage("⏳ Please wait, your survey request is being generated…", "bot");
-    return;
-  }
-
   userInput.value = "";
+
+  if (!txt) {
+    const valRes = await apiPost("/validate_input", { text: "" });
+    if (valRes && valRes.message) {
+      appendMessage(valRes.message, "bot");
+    }
+    return;
+  }
 
   // 1. Active focus area input for "Generate More" variations
   const moreFocusInput = document.getElementById("moreFocusInput");
