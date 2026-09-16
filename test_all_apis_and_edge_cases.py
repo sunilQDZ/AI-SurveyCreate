@@ -226,6 +226,134 @@ class TestAllAPIsAndEdgeCases(unittest.TestCase):
         self.assertEqual(data["selected_template"]["title"], "Customized CSAT Survey")
         self.assertEqual(data["selected_template"]["questions"][1]["scale_type"], "radio")
 
+    def test_customize_positional_addition_and_multi_format_removal(self):
+        """Test positional addition (e.g. at position 2 / after Q2) and multi-format removal (ranges, lists, counts, keywords)."""
+        mock_template = {
+            "title": "E-Commerce Survey",
+            "purpose": "Evaluate shopping experience",
+            "duration": "2.5 mins",
+            "questions": [
+                {"question": "On a scale of 0 to 10, how likely are you to recommend us?", "scale_type": "nps"},
+                {"question": "How satisfied are you with product quality?", "scale_type": "csat"},
+                {"question": "How clear was the delivery communication?", "scale_type": "rating"},
+                {"question": "How easy was the checkout process?", "scale_type": "ces"},
+                {"question": "What improvements do you suggest?", "scale_type": "text"}
+            ]
+        }
+
+        # 1. Test Removal by Question Range "Q2-Q3"
+        res = self.client.post("/customize_selected_template", json={
+            "choice": "Template 1",
+            "action": "remove",
+            "remove_input": "Q2-Q3",
+            "templates": [mock_template]
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertIn("DELETED", data["message"])
+        self.assertEqual(len(data["selected_template"]["questions"]), 3)
+
+        # 2. Test Removal by Question List "Q2 and Q3"
+        res = self.client.post("/customize_selected_template", json={
+            "choice": "Template 1",
+            "action": "remove",
+            "remove_input": "Q2 and Q3",
+            "templates": [mock_template]
+        })
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("DELETED", res.get_json()["message"])
+
+        # 3. Test Removal by Count "remove 2 questions"
+        res = self.client.post("/customize_selected_template", json={
+            "choice": "Template 1",
+            "action": "remove",
+            "remove_input": "i want to remove 2 questions from selected template",
+            "templates": [mock_template]
+        })
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("DELETED", res.get_json()["message"])
+
+        # 4. Test Positional Addition "Add pricing question at position 2"
+        res = self.client.post("/customize_selected_template", json={
+            "choice": "Template 1",
+            "action": "add",
+            "focus_area": "Add pricing question at position 2",
+            "complexity": "simple",
+            "templates": [mock_template]
+        })
+        self.assertEqual(res.status_code, 200)
+        added_qs = res.get_json()["selected_template"]["questions"]
+        self.assertGreater(len(added_qs), 5)
+
+        # 5. Test Direct Field Edits (edited_questions, title, purpose)
+        edited_q_payload = [
+            {"question": "Updated Q1 NPS?", "scale_type": "nps"},
+            {"question": "Updated Q2 Radio?", "scale_type": "radio", "options": ["Option A", "Option B"]}
+        ]
+        res = self.client.post("/customize_selected_template", json={
+            "choice": "Template 1",
+            "title": "Renamed Survey Title",
+            "purpose": "Updated Purpose Statement",
+            "edited_questions": edited_q_payload,
+            "templates": [mock_template]
+        })
+        self.assertEqual(res.status_code, 200)
+        final_tpl = res.get_json()["selected_template"]
+        self.assertEqual(final_tpl["title"], "Renamed Survey Title")
+        self.assertEqual(final_tpl["purpose"], "Updated Purpose Statement")
+        self.assertEqual(final_tpl["questions"][0]["question"], "Updated Q1 NPS?")
+        self.assertEqual(final_tpl["questions"][1]["options"], ["Option A", "Option B"])
+
+    def test_custom_add_2_questions_and_max_10_ceiling(self):
+        """Test adding 2 questions to 5-question template (yielding exactly 7 questions) and capping at max 10 ceiling."""
+        five_q_template = {
+            "title": "Website Usability Survey",
+            "purpose": "Evaluate usability",
+            "duration": "2 mins",
+            "questions": [
+                {"question": "On a scale of 0 to 10, recommend us?", "scale_type": "nps"},
+                {"question": "How satisfied are you with website speed?", "scale_type": "rating"},
+                {"question": "How easy was it to navigate?", "scale_type": "ces"},
+                {"question": "How clear was the layout?", "scale_type": "csat"},
+                {"question": "Any other feedback?", "scale_type": "text"}
+            ]
+        }
+
+        # 1. Add 2 more random questions to 5-question template -> EXACTLY 7 questions
+        res = self.client.post("/customize_selected_template", json={
+            "choice": "Template 1",
+            "action": "add",
+            "focus_area": "i want to add 2 more random questions",
+            "complexity": "simple",
+            "templates": [five_q_template]
+        })
+        self.assertEqual(res.status_code, 200)
+        tpl_7 = res.get_json()["selected_template"]
+        self.assertEqual(len(tpl_7["questions"]), 7)
+        self.assertEqual(tpl_7["questions"][0]["scale_type"], "nps")
+        self.assertEqual(tpl_7["questions"][-1]["scale_type"], "text")
+        # Ensure middle added questions do NOT use nps
+        for q in tpl_7["questions"][1:-1]:
+            self.assertNotEqual(q["scale_type"], "nps")
+
+        # 2. Add 5 questions to an 8-question template -> MUST be capped at max 10 questions
+        eight_q_template = {
+            "title": "Extended Survey",
+            "purpose": "Testing 10 ceiling",
+            "questions": [{"question": f"Question {i+1}?", "scale_type": "nps" if i==0 else ("text" if i==7 else "rating")} for i in range(8)]
+        }
+        res = self.client.post("/customize_selected_template", json={
+            "choice": "Template 1",
+            "action": "add",
+            "focus_area": "add 5 questions",
+            "templates": [eight_q_template]
+        })
+        self.assertEqual(res.status_code, 200)
+        tpl_10 = res.get_json()["selected_template"]
+        self.assertLessEqual(len(tpl_10["questions"]), 10)
+
+
+
     # ============================================
     # 6. /finalize_template ENDPOINT & EDGE CASES
     # ============================================

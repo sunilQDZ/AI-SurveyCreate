@@ -816,29 +816,65 @@ sendBtn.addEventListener("click", async () => {
     return;
   }
 
-  // 1. Active focus area input for "Generate More" variations
-  const moreFocusInput = document.getElementById("moreFocusInput");
-  if (moreFocusInput) {
-    moreFocusInput.value = txt;
+  // 1. Any active inline input inside chat box (inlineQ, moreFocusInput, or customize inputs)
+  const activeInlineInput = document.getElementById("moreFocusInput") || document.getElementById("inlineQ") || document.querySelector(".input-inline input, input.input-inline");
+  if (activeInlineInput) {
+    activeInlineInput.value = txt;
     const enterEvent = new KeyboardEvent("keydown", { key: "Enter", bubbles: true });
-    moreFocusInput.dispatchEvent(enterEvent);
+    activeInlineInput.dispatchEvent(enterEvent);
     return;
   }
 
   // 2. Active question flow during initial setup (only when templates are not generated yet)
   if (storedTemplates.length === 0) {
-    const inlineQ = document.getElementById("inlineQ") || document.querySelector(".input-inline input, input.input-inline");
-    if (inlineQ || (Array.isArray(questionFlow) && questionFlow.length > 0 && currentQuestionIndex < questionFlow.length)) {
-      if (inlineQ) {
-        inlineQ.value = txt;
-      }
+    if (Array.isArray(questionFlow) && questionFlow.length > 0 && currentQuestionIndex < questionFlow.length) {
       handleAnswer(txt);
       return;
     }
   }
 
-  // 3. Templates already generated → send text directly to backend API for refinement/generation
+  // 3. Templates already generated → check for customization intent or generate more variations
   if (storedTemplates.length > 0) {
+    const lowTxt = txt.toLowerCase();
+    const isCustomizationIntent = /remove|delete|add|customize|scale|change|reduce\s*\d*\s*question/.test(lowTxt);
+
+    if (isCustomizationIntent) {
+      if (selectedTemplateIndex === null) {
+        selectedTemplateIndex = 0;
+        renderTemplates();
+        appendMessage(`👍 Auto-selected Template 1 for customization: "${escapeHtml(storedTemplates[0].title)}"`, "bot");
+      }
+
+      appendMessage(escapeHtml(txt), "user");
+      appendMessage("✨ Applying customization...", "bot");
+
+      let action = "customize";
+      if (lowTxt.includes("remove") || lowTxt.includes("delete")) action = "remove";
+      else if (lowTxt.includes("add")) action = "add";
+
+      const res = await apiPost("/customize_selected_template", {
+        templates: storedTemplates,
+        choice: `Template ${selectedTemplateIndex + 1}`,
+        action: action,
+        focus_area: action === "add" ? txt : "",
+        remove_input: action === "remove" ? txt : "",
+        scale_action: "no",
+        scale_changes: {}
+      });
+
+      if (res.selected_template) {
+        storedTemplates[selectedTemplateIndex] = normalizeTemplate(res.selected_template);
+        renderTemplates();
+      }
+
+      if (res.message) {
+        appendMessage(res.message, "bot");
+      } else {
+        appendMessage("🎉 Customization complete!", "bot");
+      }
+      return;
+    }
+
     appendMessage(escapeHtml(txt), "user");
     appendMessage(`✨ Generating templates for: "${escapeHtml(txt)}"...`, "bot");
 

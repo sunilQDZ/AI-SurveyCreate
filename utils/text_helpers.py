@@ -57,8 +57,8 @@ def extract_requested_question_count(text: str) -> int | None:
     if m:
         try:
             val = int(m.group(1))
-            if 1 <= val <= 20:
-                return val
+            if 1 <= val <= 50:
+                return min(val, 10)
         except ValueError:
             pass
     words_map = {
@@ -67,7 +67,8 @@ def extract_requested_question_count(text: str) -> int | None:
     }
     m2 = re.search(r"\b(one|two|three|four|five|six|seven|eight|nine|ten)\s*questions?", text, re.IGNORECASE)
     if m2:
-        return words_map.get(m2.group(1).lower())
+        val = words_map.get(m2.group(1).lower())
+        return min(val, 10) if val else None
     return None
 
 

@@ -8,7 +8,7 @@ from services.validation_service import (
     is_greeting_input, is_invalid_input, is_valid_input_ai, is_off_topic_question
 )
 from services.template_engine import (
-    enforce_survey_pattern, build_fallback_templates, infer_scale_type
+    enforce_survey_pattern, build_fallback_templates, infer_scale_type, get_domain_dynamic_radio_options
 )
 from services.ai_service import analyze_user_input_with_openai
 from services.storage_service import save_history, save_finalized_template
@@ -66,13 +66,16 @@ def validate_input():
     ).lower()
 
     if not text:
-        return jsonify({
+        res = {
             "is_valid": False,
             "input": "",
             "message": "⚠️ Input cannot be empty. Please provide a valid response.",
             "question": None,
             "options": []
-        }), 400
+        }
+        print(f"[ACTION: validate_input] input='' question_id='{question_id}' is_valid=False")
+        save_history({"timestamp": datetime.now().isoformat(), "action": "validate_input", "input": "", "question_id": question_id, "is_valid": False})
+        return jsonify(res), 400
 
     display_text = truncate_text_display(text)
     is_greeting = is_greeting_input(text)
@@ -84,6 +87,8 @@ def validate_input():
         mapped = any(t in low for t in valid_types) or not is_invalid
         if is_greeting or not mapped:
             msg = f"⚠️ \"{display_text}\" is a greeting." if is_greeting else f"⚠️ \"{display_text}\" is not a valid survey type."
+            print(f"[ACTION: validate_input] input='{display_text}' question_id='{question_id}' is_valid=False")
+            save_history({"timestamp": datetime.now().isoformat(), "action": "validate_input", "input": text, "question_id": question_id, "is_valid": False})
             return jsonify({
                 "is_valid": False,
                 "input": text,
@@ -95,6 +100,8 @@ def validate_input():
     elif question_id == "audience":
         if is_greeting or is_invalid:
             msg = f"⚠️ \"{display_text}\" is a greeting." if is_greeting else f"⚠️ \"{display_text}\" is not a valid target audience."
+            print(f"[ACTION: validate_input] input='{display_text}' question_id='{question_id}' is_valid=False")
+            save_history({"timestamp": datetime.now().isoformat(), "action": "validate_input", "input": text, "question_id": question_id, "is_valid": False})
             return jsonify({
                 "is_valid": False,
                 "input": text,
@@ -106,6 +113,8 @@ def validate_input():
     elif question_id == "purpose":
         if is_greeting or is_invalid:
             msg = f"⚠️ \"{display_text}\" is a greeting." if is_greeting else f"⚠️ \"{display_text}\" is not a valid survey purpose."
+            print(f"[ACTION: validate_input] input='{display_text}' question_id='{question_id}' is_valid=False")
+            save_history({"timestamp": datetime.now().isoformat(), "action": "validate_input", "input": text, "question_id": question_id, "is_valid": False})
             return jsonify({
                 "is_valid": False,
                 "input": text,
@@ -117,6 +126,8 @@ def validate_input():
     elif question_id == "touchpoint":
         if is_greeting or is_invalid:
             msg = f"⚠️ \"{display_text}\" is a greeting." if is_greeting else f"⚠️ \"{display_text}\" is not a valid touchpoint."
+            print(f"[ACTION: validate_input] input='{display_text}' question_id='{question_id}' is_valid=False")
+            save_history({"timestamp": datetime.now().isoformat(), "action": "validate_input", "input": text, "question_id": question_id, "is_valid": False})
             return jsonify({
                 "is_valid": False,
                 "input": text,
@@ -126,6 +137,8 @@ def validate_input():
             })
 
     if is_greeting:
+        print(f"[ACTION: validate_input] input='{display_text}' question_id='{question_id}' is_valid=False")
+        save_history({"timestamp": datetime.now().isoformat(), "action": "validate_input", "input": text, "question_id": question_id, "is_valid": False})
         return jsonify({
             "is_valid": False,
             "input": text,
@@ -135,6 +148,8 @@ def validate_input():
         })
 
     is_valid = not is_invalid
+    print(f"[ACTION: validate_input] input='{display_text}' question_id='{question_id}' is_valid={is_valid}")
+    save_history({"timestamp": datetime.now().isoformat(), "action": "validate_input", "input": text, "question_id": question_id, "is_valid": is_valid})
     return jsonify({
         "is_valid": is_valid,
         "input": text,
@@ -183,6 +198,8 @@ def generate_question_flow():
                 "allow_text_input": True
             }
         ]
+        print(f"[ACTION: generate_question_flow] user_input='{truncate_text_display(user_input)}' is_greeting=True")
+        save_history({"timestamp": datetime.now().isoformat(), "action": "generate_question_flow", "user_input": user_input, "is_greeting": True})
         return jsonify({
             "is_greeting": True,
             "greeting_message": "👋 Hello! Welcome to Smart Survey Creator. Choose your survey details below or enter your survey idea to get started.",
@@ -205,6 +222,8 @@ def generate_question_flow():
             }
         ]
         display_input = truncate_text_display(user_input)
+        print(f"[ACTION: generate_question_flow] user_input='{display_input}' is_invalid=True")
+        save_history({"timestamp": datetime.now().isoformat(), "action": "generate_question_flow", "user_input": user_input, "is_invalid": True})
         return jsonify({
             "is_invalid": True,
             "invalid_message": f"⚠️ \"{display_input}\" is not a valid survey topic or requirement. Please provide a clear survey requirement (e.g., Customer Satisfaction, Laptop Repair, Mobile App Experience).",
@@ -303,6 +322,18 @@ def generate_question_flow():
         if ai_touchpoint_suggestion and ai_touchpoint_suggestion not in touch_q["options"]:
             touch_q["options"].insert(0, ai_touchpoint_suggestion)
         question_flow.append(touch_q)
+
+    print(f"[ACTION: generate_question_flow] user_input='{truncate_text_display(user_input)}' all_detected={all_detected} type='{survey_type}'")
+    save_history({
+        "timestamp": datetime.now().isoformat(),
+        "action": "generate_question_flow",
+        "user_input": user_input,
+        "all_detected": all_detected,
+        "detected_survey_type": survey_type,
+        "detected_audience": audience,
+        "detected_purpose": purpose,
+        "detected_touchpoint": touchpoint
+    })
 
     return jsonify({
         "all_detected": all_detected,
@@ -405,7 +436,7 @@ def generate_survey():
         else:
             survey_type = "general"
 
-    req_count = extract_requested_question_count(user_input) or extract_requested_question_count(topic) or 5
+    req_count = min(10, extract_requested_question_count(user_input) or extract_requested_question_count(topic) or 5)
     processed_templates = []
 
     prompt = f"""
@@ -507,9 +538,12 @@ QUESTION FORMAT:
         for t in processed_templates
     ]
 
+    print(f"[ACTION: generate_survey] user_input='{truncate_text_display(user_input)}' topic='{truncate_text_display(topic)}' survey_type='{survey_type}' templates_count={len(processed_templates)}")
     save_history({
         "timestamp": datetime.now().isoformat(),
+        "action": "generate_survey",
         "input": user_input,
+        "topic": topic,
         "survey_type": survey_type,
         "templates": processed_templates
     })
@@ -583,7 +617,7 @@ def generate_more_surveys():
 
     base_topic = " ".join(topic_parts) if topic_parts else original_user_input
 
-    req_count = (
+    req_count = min(10, 
         extract_requested_question_count(focus_area)
         or extract_requested_question_count(original_user_input)
         or 5
@@ -658,6 +692,15 @@ OUTPUT FORMAT:
 
     for t in templates:
         t["duration"] = clamp_duration(t.get("duration"))
+
+    print(f"[ACTION: generate_more_surveys] focus_area='{truncate_text_display(focus_area)}' survey_type='{survey_type}' count={len(templates)}")
+    save_history({
+        "timestamp": datetime.now().isoformat(),
+        "action": "generate_more_surveys",
+        "focus_area": focus_area,
+        "survey_type": survey_type,
+        "templates": templates
+    })
 
     return jsonify({
         "surveys": templates,
@@ -766,6 +809,54 @@ def customize_selected_template():
     if action in ["add", "remove"]:
         if action == "add":
             topic = focus_area or title
+
+            # Extract requested count if user typed e.g. "add 2 more random questions" or "add 2 questions"
+            req_count = 3
+            count_match = re.search(r"(\d+)", topic.lower() if topic else "")
+            if count_match:
+                try:
+                    parsed_n = int(count_match.group(1))
+                    if 1 <= parsed_n <= 10:
+                        req_count = parsed_n
+                except Exception:
+                    req_count = 3
+
+            # Clamp req_count so total questions (existing + new) does not exceed 10
+            max_add_allowed = max(1, 10 - len(questions))
+            req_count = min(req_count, max_add_allowed)
+
+            # Parse position parameter or extract positional phrases from focus_area/prompt
+            pos_param = data.get("position") or data.get("insert_at") or data.get("insert_after") or data.get("insert_before")
+            insert_idx = None
+
+            if pos_param and str(pos_param).isdigit():
+                val_pos = int(pos_param)
+                if data.get("insert_after"):
+                    insert_idx = val_pos
+                else:
+                    insert_idx = max(1, val_pos - 1)
+
+            if insert_idx is None and topic:
+                low_top = topic.lower()
+                m_after = re.search(r"after\s+(?:question|q)?\s*(\d+)", low_top)
+                m_before = re.search(r"before\s+(?:question|q)?\s*(\d+)", low_top)
+                m_at = re.search(r"(?:at|in|position|pos)\s+(?:position|pos|question|q)?\s*(\d+)", low_top)
+
+                if m_after:
+                    insert_idx = int(m_after.group(1))
+                elif m_before:
+                    insert_idx = max(1, int(m_before.group(1)) - 1)
+                elif m_at:
+                    insert_idx = max(1, int(m_at.group(1)) - 1)
+
+            # Clean meta-instruction words from topic so AI focuses on real domain subject
+            clean_topic = topic if topic else ""
+            clean_topic = re.sub(r"\b(after|before|at|in|position|pos)\s+(?:position|pos|question|q)?\s*\d+\b", "", clean_topic, flags=re.IGNORECASE)
+            clean_topic = re.sub(r"\b(add|insert|include|create|make|generate|\d+|more|random|new|extra|some|questions?)\b", "", clean_topic, flags=re.IGNORECASE).strip()
+
+            if not clean_topic or len(clean_topic) < 3 or clean_topic.lower() in ["survey", "template"]:
+                clean_topic = title or selected.get("purpose") or "overall experience"
+
             try:
                 tone_map = {
                     "simple": "easy and straightforward",
@@ -775,9 +866,9 @@ def customize_selected_template():
                 tone = tone_map.get(complexity.lower(), "balanced and thoughtful")
 
                 prompt = f"""
-                Generate 3–4 {tone} survey questions about '{topic}'.
+                Generate {req_count} {tone} survey questions about '{clean_topic}'.
                 Avoid numbering or prefixes. Keep them concise, neutral, and measurable.
-                Example: How satisfied are you with our {topic} process?
+                Example: How satisfied are you with our {clean_topic} process?
                 For any yes/no or single-choice question, explicitly mention if it is radio style.
                 """
 
@@ -797,24 +888,19 @@ def customize_selected_template():
             except Exception as e:
                 print(f"[WARNING] AI question generation failed (add): {e}")
                 ai_questions = [
-                    f"How satisfied are you with our {topic} process?",
-                    f"How clear was the communication regarding {topic}?",
-                    f"Did you experience any difficulty with {topic}?",
-                    f"What improvements do you suggest for {topic}?"
+                    f"How satisfied are you with our {clean_topic} process?",
+                    f"How clear was the communication regarding {clean_topic}?",
+                    f"Did you experience any difficulty with {clean_topic}?"
                 ]
 
             def infer_add_scale(question: str) -> str:
                 lower_q = question.lower()
-                if "nps" in lower_q or "recommend" in lower_q or "likely" in lower_q:
-                    return "nps"
                 if "satisfied" in lower_q or "csat" in lower_q:
                     return "csat"
-                if "ease" in lower_q or "ces" in lower_q:
+                if "ease" in lower_q or "ces" in lower_q or "difficult" in lower_q:
                     return "ces"
                 if any(x in lower_q for x in ["rate", "rating", "score"]):
                     return "rating"
-                if any(x in lower_q for x in ["why", "describe", "explain", "feedback", "suggest"]):
-                    return "text"
                 if any(x in lower_q for x in ["choose", "select", "pick one", "yes or no", "yes/no"]):
                     return "radio"
                 if any(x in lower_q for x in ["multiple", "select all", "choose all"]):
@@ -826,49 +912,102 @@ def customize_selected_template():
                 return "rating"
 
             new_qs = []
-            for q in ai_questions[:4]:
-                inferred = infer_add_scale(q)
-                if inferred in ["nps", "csat", "ces", "rating"]:
-                    final_scale = (
-                        primary_survey_type
-                        if primary_survey_type in ["nps", "csat", "ces"]
-                        else inferred
-                    )
-                else:
-                    final_scale = inferred
+            for q in ai_questions[:req_count]:
+                scale = infer_add_scale(q)
+                if scale in ["nps", "text"]:
+                    scale = "rating"
 
-                q_obj = {"question": q, "scale_type": final_scale}
-                if final_scale == "radio":
-                    q_obj["options"] = ["Yes", "No", "Not sure"]
+                q_obj = {"question": q, "scale_type": scale}
+                if scale in ["radio", "mcq"]:
+                    q_obj["options"] = get_domain_dynamic_radio_options(q, clean_topic)
 
                 new_qs.append(q_obj)
 
-            questions.extend(new_qs)
+            # Insert at target position or default before last open text question
+            if insert_idx is not None:
+                insert_idx = max(1, min(insert_idx, max(1, len(questions) - 1)))
+                for q_item in reversed(new_qs):
+                    questions.insert(insert_idx, q_item)
+                pos_info = f"at position {insert_idx + 1}"
+            else:
+                insert_idx = max(1, len(questions) - 1) if len(questions) > 1 else len(questions)
+                for q_item in reversed(new_qs):
+                    questions.insert(insert_idx, q_item)
+                pos_info = f"into the survey"
+
             ai_questions_added = True
 
         elif action == "remove":
             if not remove_input:
-                return jsonify({"error": "Missing remove_input", "message": "⚠️ Specify which question to remove (e.g., Q2 or keyword)."}), 400
+                return jsonify({"error": "Missing remove_input", "message": "⚠️ Specify which question to remove (e.g., Q2, Q2-Q4, or keyword)."}), 400
 
             display_remove = truncate_text_display(remove_input)
-            remove_targets = [r.strip().lower() for r in remove_input.split(",") if r.strip()]
             to_remove = []
+            low_remove = remove_input.lower()
 
-            for i, q in enumerate(questions):
-                q_text = q["question"].lower()
-                for target in remove_targets:
-                    if target == f"q{i+1}".lower() or target in q_text:
-                        to_remove.append(i)
-                        break
+            # 1. Range matches e.g. "q2-q4", "q2 to q4", "2 to 4", "questions 2 to 4"
+            m_range = re.search(r"(?:q|question)?\s*(\d+)\s*(?:-|to)\s*(?:q|question)?\s*(\d+)", low_remove)
+            if m_range:
+                start_q = int(m_range.group(1))
+                end_q = int(m_range.group(2))
+                for q_num in range(start_q, end_q + 1):
+                    idx = q_num - 1
+                    if 0 <= idx < len(questions):
+                        to_remove.append(idx)
+
+            # 2. Specific question numbers e.g. "q2", "q3", "question 2", "2nd question", "q2, q4", "q2 and q3"
+            if not to_remove:
+                m_nums = re.findall(r"(?:q|question|item|#)?\s*(\d+)(?:st|nd|rd|th)?", low_remove)
+                if m_nums:
+                    for n_str in m_nums:
+                        q_num = int(n_str)
+                        idx = q_num - 1
+                        if 0 <= idx < len(questions):
+                            to_remove.append(idx)
+
+            # 3. Keyword matching in question text e.g. "pricing", "satisfaction"
+            if not to_remove:
+                remove_targets = [r.strip() for r in low_remove.split(",") if r.strip()]
+                for i, q in enumerate(questions):
+                    q_text = q["question"].lower()
+                    for target in remove_targets:
+                        clean_target = re.sub(r"^(i want to remove|remove|delete|question)\s*", "", target).strip()
+                        if clean_target and len(clean_target) > 1 and clean_target in q_text:
+                            to_remove.append(i)
+
+            # 4. Count matching fallback e.g. "remove 2 questions", "2 questions"
+            if not to_remove:
+                m_count = re.search(r"(\d+)\s*(?:questions|question)?", low_remove)
+                if m_count:
+                    n_remove = int(m_count.group(1))
+                    candidate_indices = [idx for idx in range(len(questions)) if idx != 0 and idx != len(questions) - 1]
+                    if not candidate_indices:
+                        candidate_indices = list(range(1, len(questions)))
+                    to_remove = candidate_indices[:n_remove]
+
+            # 5. Fallback: if user specified "remove" or "delete" without clear target or count, remove 1 middle question
+            if not to_remove and ("remove" in low_remove or "delete" in low_remove):
+                if len(questions) > 2:
+                    to_remove = [1]
+                elif len(questions) > 1:
+                    to_remove = [len(questions) - 1]
 
             if not to_remove:
                 return jsonify({"error": "Question not found", "message": f"⚠️ No question found matching '{display_remove}'."}), 404
 
-            for i in sorted(set(to_remove), reverse=True):
+            unique_indices = sorted(set(to_remove), reverse=True)
+            removed_labels = [f"Q{i+1}" for i in sorted(set(to_remove))]
+            for i in unique_indices:
                 questions.pop(i)
 
+            # Re-enforce survey pattern to keep valid Q1=NPS and Q_last=Text
+            if selected:
+                selected["questions"] = questions
+                selected = enforce_survey_pattern(selected, topic_hint=title, default_max=len(questions))
+                questions = selected.get("questions", [])
+
             return jsonify({
-                "message": f"[DELETED] Removed {len(to_remove)} question(s) successfully.",
+                "message": f"[DELETED] Successfully removed question(s) {', '.join(removed_labels)}.",
                 "ask_add": True,
                 "customization_questions": [{
                     "question": "Would you like to add any questions to this template now?",
@@ -910,6 +1049,16 @@ def customize_selected_template():
             }
         ]
 
+    print(f"[ACTION: customize_selected_template] choice='{choice}' action='{action}' title='{selected.get('title')}'")
+    save_history({
+        "timestamp": datetime.now().isoformat(),
+        "action": "customize_selected_template",
+        "choice": choice,
+        "action_type": action,
+        "focus_area": focus_area,
+        "selected_template": selected
+    })
+
     return jsonify({
         "message": "[SUCCESS] Template customization completed successfully.",
         "selected_template": selected,
@@ -933,6 +1082,7 @@ def finalize_template():
         return jsonify({"error": "Missing or invalid final_template", "message": "⚠️ Please select a template first to finalize."}), 400
 
     template_id, file_path = save_finalized_template(final_template)
+    print(f"[ACTION: finalize_template] template_id='{template_id}' path='{file_path}'")
 
     return jsonify({
         "message": "Template finalized successfully.",

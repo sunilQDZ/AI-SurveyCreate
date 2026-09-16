@@ -216,7 +216,7 @@ def enforce_survey_pattern(template: dict, topic_hint: str = "", default_max: in
     topic = topic_hint or "your recent experience"
     allowed_middle_scales = ["rating", "csat", "ces", "radio", "mcq"]
 
-    target_count = max(2, default_max)
+    target_count = min(10, max(2, default_max))
 
     # Step 1: Ensure question count matches target_count
     if len(questions) < target_count:
