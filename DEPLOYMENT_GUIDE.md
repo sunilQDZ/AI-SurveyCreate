@@ -2,15 +2,15 @@
 
 > [!CRITICAL]
 > **CRITICAL DEPLOYMENT RULES:**
-> 1. **Application Entry File:** The backend entry point MUST ALWAYS be named [`app.py`](file:///d:/SUNIL%20KUMAWAT/survey-ai-create/app.py). Do NOT rename or replace `app.py` as Windows services, systemd, and Apache supervisor rely specifically on `python app.py` to start the application.
+> 1. **Application Entry File:** The backend entry point MUST ALWAYS be named [`app.py`](file:///d:/SUNIL%20KUMAWAT/Live_Projects/survey-ai-create/app.py). Do NOT rename or replace `app.py` as Windows services, systemd, and Apache supervisor rely specifically on `python app.py` to start the application.
 > 2. **Backend Communication Port:** The Apache reverse proxy for `https://ai-surveycreate.qdegrees.com/` is configured to communicate with backend port **5005** (`PORT=5005`).
 
-Since you are hosting this directly from your project folder (`d:\SUNIL KUMAWAT\survey-ai-create`), here are the exact steps to transition your local environment into a live production environment.
+Since you are hosting this directly from your project folder (`d:\SUNIL KUMAWAT\Live_Projects\survey-ai-create`), here are the exact steps to transition your local environment into a live production environment.
 
 ## 1. Create & Activate Virtual Environment
 Before installing anything, ensure you are working inside a clean virtual environment. 
 
-Open your terminal (PowerShell or Command Prompt), ensure you are in the `d:\SUNIL KUMAWAT\survey-ai-create` folder, and run:
+Open your terminal (PowerShell or Command Prompt), ensure you are in the `d:\SUNIL KUMAWAT\Live_Projects\survey-ai-create` folder, and run:
 ```powershell
 python -m venv venv
 ```

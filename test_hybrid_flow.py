@@ -113,5 +113,32 @@ class TestFullBackendAPIEndpoints(unittest.TestCase):
         self.assertTrue(os.path.exists(file_path))
         print(f"\n[API TEST 6] POST /finalize_template -> 200 OK (Saved template ID: {template_id} at {file_path})")
 
+    def test_api_7_validation_messages(self):
+        """API 7: Verification of API validation error responses for greetings, invalid inputs, and valid template generation"""
+        # 7a: Greeting input on /generate_survey
+        res_greeting = self.app.post("/generate_survey", data=json.dumps({"user_input": "hyy"}), content_type="application/json")
+        self.assertEqual(res_greeting.status_code, 400)
+        data_g = res_greeting.get_json()
+        self.assertIn("greeting", data_g.get("message", "").lower())
+        def safe_print(label, text):
+            cleaned = str(text or "").encode("ascii", "replace").decode("ascii")
+            print(f"{label}: {cleaned}")
+
+        safe_print("\n[API TEST 7a] POST /generate_survey with greeting 'hyy' -> 400 with validation message", data_g.get("message"))
+
+        # 7b: Invalid gibberish input on /generate_survey
+        res_gibberish = self.app.post("/generate_survey", data=json.dumps({"user_input": "gfhdfjh"}), content_type="application/json")
+        self.assertEqual(res_gibberish.status_code, 400)
+        data_gib = res_gibberish.get_json()
+        self.assertIn("not a valid survey topic", data_gib.get("message", "").lower())
+        safe_print("[API TEST 7b] POST /generate_survey with gibberish 'gfhdfjh' -> 400 with validation message", data_gib.get("message"))
+
+        # 7c: Invalid input on /generate_more_surveys
+        res_more_invalid = self.app.post("/generate_more_surveys", data=json.dumps({"focus_area": "gfhdfjh"}), content_type="application/json")
+        self.assertEqual(res_more_invalid.status_code, 400)
+        data_more_inv = res_more_invalid.get_json()
+        self.assertIn("not a valid focus area", data_more_inv.get("message", "").lower())
+        safe_print("[API TEST 7c] POST /generate_more_surveys with invalid input -> 400 with validation message", data_more_inv.get("message"))
+
 if __name__ == "__main__":
     unittest.main()

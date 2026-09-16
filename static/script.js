@@ -1987,123 +1987,111 @@ function interpretSurveyTypeAnswer(ans) {
 // ===============================
 // START FLOW
 // ===============================
+let isGenerating = false;
+
 async function startFlow(text) {
   originalUserInput = text.trim();
   if (!originalUserInput) return;
 
-  // Reset state for new conversation
-  collectedAnswers = {};
-  storedTemplates = [];
-  selectedTemplateIndex = null;
-  questionFlow = [];
-  currentQuestionIndex = 0;
-
-  surveyContext = {
-    survey_type: null,
-    audience: null,
-    purpose: null,
-    touchpoint: null
-  };
-  currentSurveyType = "general";
-
-  templateList.innerHTML = `
-    <div class="empty-state">
-      <div class="empty-icon">✨</div>
-      <div class="empty-title">No templates generated yet</div>
-      <div class="empty-text">Describe your survey idea on the left to see ready-made templates here.</div>
-    </div>
-  `;
-  previewSubtitle.textContent = "No templates yet";
-  customizeBtn.disabled = true;
-  generateMoreBtn.disabled = true;
-  finalizeBtn.disabled = true;
-  downloadJsonBtn.disabled = true;
-
-  appendMessage(escapeHtml(originalUserInput), "user");
-  appendMessage("🧠 Understanding your request…", "bot");
-
-  // Call new AI-based generate_question_flow
-  const resp = await apiPost("/generate_question_flow", {
-    user_input: originalUserInput,
-    // Let backend + AI fully detect; we don't force survey_type here
-    survey_type: "",
-  });
-
-  if (resp.error) {
-    appendMessage("⚠️ Something went wrong. Please try again.", "bot");
+  if (isGenerating) {
+    appendMessage("⏳ Please wait, we are processing your request...", "bot");
     return;
   }
 
-  // Store AI-detected values (may be null)
-  surveyContext.survey_type = resp.detected_survey_type || null;
-  surveyContext.audience = resp.detected_audience || null;
-  surveyContext.purpose = resp.detected_purpose || null;
-  surveyContext.touchpoint = resp.detected_touchpoint || null;
+  isGenerating = true;
+  if (sendBtn) sendBtn.disabled = true;
 
-  currentSurveyType = surveyContext.survey_type || "general";
+  try {
+    // Reset state for new conversation
+    collectedAnswers = {};
+    storedTemplates = [];
+    selectedTemplateIndex = null;
+    questionFlow = [];
+    currentQuestionIndex = 0;
 
-  if (surveyContext.survey_type) collectedAnswers["survey_type"] = surveyContext.survey_type;
-  if (surveyContext.audience) collectedAnswers["audience"] = surveyContext.audience;
-  if (surveyContext.purpose) collectedAnswers["purpose"] = surveyContext.purpose;
-  if (surveyContext.touchpoint) collectedAnswers["touchpoint"] = surveyContext.touchpoint;
-
-  // Hybrid case: All 4 parameters detected → Show summary with 1-click Generate or Review option
-  if (resp.all_detected === true) {
-    const summaryMsg = `🧠 <b>I understood your request!</b><br>${resp.summary_text || ""}`;
-    appendMessage(summaryMsg, "bot");
-
-    const box = document.createElement("div");
-    box.className = "msg options-list bot";
-    const optDiv = document.createElement("div");
-    optDiv.className = "options";
-
-    const genBtn = document.createElement("button");
-    genBtn.className = "chip";
-    genBtn.innerHTML = "🚀 Generate Templates Now";
-    genBtn.onclick = () => {
-      box.remove();
-      generateSurvey();
+    surveyContext = {
+      survey_type: null,
+      audience: null,
+      purpose: null,
+      touchpoint: null
     };
+    currentSurveyType = "general";
 
-    const editBtn = document.createElement("button");
-    editBtn.className = "chip";
-    editBtn.innerHTML = "✏️ Review / Change Details";
-    editBtn.onclick = () => {
-      box.remove();
-      setupFullQuestionReview(resp);
-    };
+    templateList.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">✨</div>
+        <div class="empty-title">No templates generated yet</div>
+        <div class="empty-text">Describe your survey idea on the left to see ready-made templates here.</div>
+      </div>
+    `;
+    previewSubtitle.textContent = "No templates yet";
+    customizeBtn.disabled = true;
+    generateMoreBtn.disabled = true;
+    finalizeBtn.disabled = true;
+    downloadJsonBtn.disabled = true;
 
-    optDiv.appendChild(genBtn);
-    optDiv.appendChild(editBtn);
-    box.appendChild(optDiv);
-    chatEl.appendChild(box);
-    chatEl.scrollTop = chatEl.scrollHeight;
-    return;
+    appendMessage(escapeHtml(originalUserInput), "user");
+    appendMessage("🧠 Understanding your request…", "bot");
+
+    // Call new AI-based generate_question_flow
+    const resp = await apiPost("/generate_question_flow", {
+      user_input: originalUserInput,
+      // Let backend + AI fully detect; we don't force survey_type here
+      survey_type: "",
+    });
+
+    if (resp.error) {
+      appendMessage(resp.message || resp.invalid_message || "⚠️ Something went wrong. Please try again.", "bot");
+      return;
+    }
+
+    // Store AI-detected values (may be null)
+    surveyContext.survey_type = resp.detected_survey_type || null;
+    surveyContext.audience = resp.detected_audience || null;
+    surveyContext.purpose = resp.detected_purpose || null;
+    surveyContext.touchpoint = resp.detected_touchpoint || null;
+
+    currentSurveyType = surveyContext.survey_type || "general";
+
+    if (surveyContext.survey_type) collectedAnswers["survey_type"] = surveyContext.survey_type;
+    if (surveyContext.audience) collectedAnswers["audience"] = surveyContext.audience;
+    if (surveyContext.purpose) collectedAnswers["purpose"] = surveyContext.purpose;
+    if (surveyContext.touchpoint) collectedAnswers["touchpoint"] = surveyContext.touchpoint;
+
+    // All parameters detected → Show summary and generate templates immediately
+    if (resp.all_detected === true || resp.skip_questions === true) {
+      const summaryMsg = `🧠 <b>I understood your request!</b><br>${resp.summary_text || ""}`;
+      appendMessage(summaryMsg, "bot");
+      return generateSurvey();
+    }
+
+    // Handle Greeting or Invalid messages
+    if (resp.is_greeting && resp.greeting_message) {
+      appendMessage(resp.greeting_message, "bot");
+    } else if (resp.is_invalid && resp.invalid_message) {
+      appendMessage(resp.invalid_message, "bot");
+    }
+
+    // Otherwise, follow-up questions for missing fields
+    questionFlow = (resp.question_flow || []).map((q) => ({
+      id: q.id || "",
+      text: q.q || q.question,
+      options: q.options || [],
+      allow_text: q.allow_text_input || false,
+    }));
+
+    if (!questionFlow.length) {
+      appendMessage("❓ I could not determine all details, but I'll try generating templates anyway.", "bot");
+      return generateSurvey();
+    }
+
+    const prefix = resp.summary_text ? `📝 <b>Detected:</b> ${resp.summary_text}<br>Please answer the missing details below:` : "📝 Please answer the quick details below:";
+    appendMessage(prefix, "bot");
+    askNextQuestion();
+  } finally {
+    isGenerating = false;
+    if (sendBtn) sendBtn.disabled = false;
   }
-
-  // Handle Greeting or Invalid messages
-  if (resp.is_greeting && resp.greeting_message) {
-    appendMessage(resp.greeting_message, "bot");
-  } else if (resp.is_invalid && resp.invalid_message) {
-    appendMessage(resp.invalid_message, "bot");
-  }
-
-  // Otherwise, follow-up questions for missing fields
-  questionFlow = (resp.question_flow || []).map((q) => ({
-    id: q.id || "",
-    text: q.q || q.question,
-    options: q.options || [],
-    allow_text: q.allow_text_input || false,
-  }));
-
-  if (!questionFlow.length) {
-    appendMessage("❓ I could not determine all details, but I'll try generating templates anyway.", "bot");
-    return generateSurvey();
-  }
-
-  const prefix = resp.summary_text ? `📝 <b>Detected:</b> ${resp.summary_text}<br>Please answer the missing details below:` : "📝 Please answer the quick details below:";
-  appendMessage(prefix, "bot");
-  askNextQuestion();
 }
 
 // ===============================
@@ -2180,6 +2168,7 @@ function askNextQuestion() {
     other.type = "text";
     other.placeholder = "Type your answer…";
     other.className = "input-inline";
+    other.id = "inlineQ";
     other.onkeydown = (e) => {
       if (e.key === "Enter" && other.value.trim()) {
         handleAnswer(other.value.trim());
@@ -2208,56 +2197,6 @@ function askNextQuestion() {
   }
 }
 
-function isGreetingText(text) {
-  const clean = String(text || "").trim().toLowerCase();
-  if (!clean) return false;
-  const greetings = new Set([
-    "hy", "hyy", "hyyy", "hi", "hii", "hiii", "hey", "heyy", "heyyy", "hello",
-    "hola", "greetings", "good morning", "good afternoon", "good evening", "namaste", "yo", "sup"
-  ]);
-  if (greetings.has(clean)) return true;
-  return /^(h[eyiai]+|hello|greetings|good\s+(morning|afternoon|evening))\b/i.test(clean);
-}
-
-function isInvalidInputText(text) {
-  const clean = String(text || "").trim();
-  if (!clean) return true;
-
-  if (isGreetingText(clean)) return true;
-
-  // Pure symbols or punctuation
-  if (/^[\s\?\!\.\,\;\:\-\_\@\#\$\%\^\&\*\(\)\/\<\>\\\"\'\`\~\+\=\|\[\]\{\}]+$/.test(clean)) return true;
-
-  // Pure numbers without context e.g. "123456"
-  if (/^\d+$/.test(clean)) return true;
-
-  const lettersAll = clean.replace(/[^a-zA-Z]/g, "");
-  if (lettersAll.length < 1) return true;
-
-  const words = clean.toLowerCase().split(/\s+/);
-  const allowedVowelless = new Set(["rhythm", "lynx", "nymph", "slyly", "dryly", "wryly", "by", "my", "try", "fly", "sky", "why", "cry", "fry", "dry"]);
-
-  for (const w of words) {
-    const lettersOnly = w.replace(/[^a-z]/g, "");
-    if (!lettersOnly) continue;
-
-    // Single character repeated (e.g., "aaaaa", "zzzzz")
-    if (lettersOnly.length >= 3 && new Set(lettersOnly).size === 1) return true;
-
-    // 4+ consecutive consonants e.g. "gfhdfjh", "sdgsdh", "segfhdfjh"
-    if (/[bcdfghjklmnpqrstvwxz]{4,}/.test(lettersOnly)) return true;
-
-    // 2+ letters in word with no standard vowels (a, e, i, o, u)
-    if (lettersOnly.length >= 2 && !/[aeiou]/.test(lettersOnly) && !allowedVowelless.has(lettersOnly)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-
-
 function repromptCurrentQuestion() {
   clearInlineInputs();
   const q = questionFlow[currentQuestionIndex];
@@ -2285,6 +2224,7 @@ function repromptCurrentQuestion() {
     other.type = "text";
     other.placeholder = "Type your answer…";
     other.className = "input-inline";
+    other.id = "inlineQ";
     other.onkeydown = (e) => {
       if (e.key === "Enter" && other.value.trim()) {
         handleAnswer(other.value.trim());
@@ -2315,14 +2255,11 @@ function repromptCurrentQuestion() {
 }
 
 // ===============================
-// HANDLE ANSWER
+// HANDLE ANSWER (Backend Validation)
 // ===============================
-function handleAnswer(ans) {
+async function handleAnswer(ans) {
   const val = (ans || "").trim();
-  if (!val) {
-    appendMessage("⚠️ Please provide a valid response or select an option to continue.", "bot");
-    return;
-  }
+  if (!val) return;
 
   const q = questionFlow[currentQuestionIndex];
   if (!q) return;
@@ -2330,68 +2267,39 @@ function handleAnswer(ans) {
   const key = q.id || q.text || `q${currentQuestionIndex + 1}`;
   const idLower = (q.id || "").toLowerCase();
 
-  if (isGreetingText(val)) {
+  // Validate answer using backend API
+  const validation = await apiPost("/validate_input", {
+    text: val,
+    question_id: idLower
+  });
+
+  if (validation.is_valid === false) {
     appendMessage(escapeHtml(val), "user");
-    appendMessage(`⚠️ <b>"${escapeHtml(val)}"</b> is a greeting. Please select an option below or type a specific answer to continue setting up your survey.`, "bot");
+    appendMessage(validation.message || "⚠️ Invalid input.", "bot");
     repromptCurrentQuestion();
     return;
   }
 
-  // Validate answer per question type before accepting
+  // Answer is valid!
+  clearInlineInputs();
+  appendMessage(escapeHtml(val), "user");
+  collectedAnswers[key] = val;
+
   if (idLower === "survey_type") {
     const mapped = interpretSurveyTypeAnswer(val);
-    const isGibberish = isInvalidInputText(val);
-
-    if (!mapped && (isGibberish || val.length < 2)) {
-      appendMessage(escapeHtml(val), "user");
-      appendMessage(`⚠️ <b>"${escapeHtml(val)}"</b> is not a valid survey type. Please choose one of the options below (NPS, CSAT, CES, General) or type a valid requirement.`, "bot");
-      repromptCurrentQuestion();
-      return;
-    }
-
     surveyContext.survey_type = mapped || "general";
     currentSurveyType = surveyContext.survey_type;
     collectedAnswers["survey_type"] = surveyContext.survey_type;
   } else if (idLower === "audience") {
-    if (isInvalidInputText(val)) {
-      appendMessage(escapeHtml(val), "user");
-      appendMessage(`⚠️ <b>"${escapeHtml(val)}"</b> is not a valid target audience. Please select an option below or type a valid audience (e.g., Customers, Employees, Students).`, "bot");
-      repromptCurrentQuestion();
-      return;
-    }
     surveyContext.audience = val;
     collectedAnswers["audience"] = val;
   } else if (idLower === "purpose") {
-    if (isInvalidInputText(val)) {
-      appendMessage(escapeHtml(val), "user");
-      appendMessage(`⚠️ <b>"${escapeHtml(val)}"</b> is not a valid survey purpose. Please enter a clear survey topic or purpose (e.g., Customer Satisfaction, Service Feedback).`, "bot");
-      repromptCurrentQuestion();
-      return;
-    }
     surveyContext.purpose = val;
     collectedAnswers["purpose"] = val;
   } else if (idLower === "touchpoint") {
-    if (isInvalidInputText(val)) {
-      appendMessage(escapeHtml(val), "user");
-      appendMessage(`⚠️ <b>"${escapeHtml(val)}"</b> is not a valid touchpoint. Please select an option below or enter a valid channel (e.g., Website, Mobile App, Store Visit).`, "bot");
-      repromptCurrentQuestion();
-      return;
-    }
     surveyContext.touchpoint = val;
     collectedAnswers["touchpoint"] = val;
-  } else {
-    if (isInvalidInputText(val)) {
-      appendMessage(escapeHtml(val), "user");
-      appendMessage(`⚠️ <b>"${escapeHtml(val)}"</b> does not appear to be a valid answer. Please provide a valid response to continue.`, "bot");
-      repromptCurrentQuestion();
-      return;
-    }
-    collectedAnswers[key] = val;
   }
-
-  // Answer is valid!
-  appendMessage(escapeHtml(val), "user");
-  collectedAnswers[key] = val;
 
   currentQuestionIndex++;
 
@@ -2406,41 +2314,52 @@ function handleAnswer(ans) {
 // GENERATE SURVEYS
 // ===============================
 async function generateSurvey() {
-  appendMessage("✨ Creating survey templates…", "bot");
+  clearInlineInputs();
+  if (isGenerating) return;
+  isGenerating = true;
+  if (sendBtn) sendBtn.disabled = true;
 
-  // Make sure collectedAnswers has final context
-  if (surveyContext.survey_type) collectedAnswers["survey_type"] = surveyContext.survey_type;
-  if (surveyContext.audience) collectedAnswers["audience"] = surveyContext.audience;
-  if (surveyContext.purpose) collectedAnswers["purpose"] = surveyContext.purpose;
-  if (surveyContext.touchpoint) collectedAnswers["touchpoint"] = surveyContext.touchpoint;
+  try {
+    appendMessage("✨ Creating survey templates…", "bot");
 
-  const res = await apiPost("/generate_survey", {
-    user_input: originalUserInput,
-    survey_type: surveyContext.survey_type || "general",
-    target_audience: surveyContext.audience || "",
-    survey_purpose: surveyContext.purpose || "",
-    touchpoint: surveyContext.touchpoint || "",
-    answers: collectedAnswers
-  });
+    // Make sure collectedAnswers has final context
+    if (surveyContext.survey_type) collectedAnswers["survey_type"] = surveyContext.survey_type;
+    if (surveyContext.audience) collectedAnswers["audience"] = surveyContext.audience;
+    if (surveyContext.purpose) collectedAnswers["purpose"] = surveyContext.purpose;
+    if (surveyContext.touchpoint) collectedAnswers["touchpoint"] = surveyContext.touchpoint;
 
-  if (res.message && (!res.surveys || !res.surveys.length)) {
-    appendMessage(res.message, "bot");
-    return;
+    const res = await apiPost("/generate_survey", {
+      user_input: originalUserInput,
+      survey_type: surveyContext.survey_type || "general",
+      target_audience: surveyContext.audience || "",
+      survey_purpose: surveyContext.purpose || "",
+      touchpoint: surveyContext.touchpoint || "",
+      answers: collectedAnswers
+    });
+
+    const tplsList = res.surveys || res.templates || [];
+
+    if ((res.error || res.message) && !tplsList.length) {
+      appendMessage(res.message || res.error || "⚠️ Could not generate templates. Try rephrasing your request.", "bot");
+      return;
+    }
+
+    if (!tplsList.length) {
+      appendMessage("⚠️ Could not generate templates. Try rephrasing your request.", "bot");
+      return;
+    }
+
+    storedTemplates = tplsList.map(normalizeTemplate);
+    renderTemplates();
+
+    previewSubtitle.textContent = `${storedTemplates.length} templates`;
+    customizeBtn.disabled = false;
+    generateMoreBtn.disabled = false;
+    finalizeBtn.disabled = false;
+  } finally {
+    isGenerating = false;
+    if (sendBtn) sendBtn.disabled = false;
   }
-
-  if (!res.surveys || !res.surveys.length) {
-    appendMessage("⚠️ Could not generate templates. Try rephrasing your request.", "bot");
-    return;
-  }
-
-  storedTemplates = res.surveys.map(normalizeTemplate);
-  renderTemplates();
-
-  previewSubtitle.textContent = `${storedTemplates.length} templates`;
-  customizeBtn.disabled = false;
-  generateMoreBtn.disabled = false;
-  finalizeBtn.disabled = false;
-  // downloadJson stays disabled until finalize
 }
 
 // ===============================
@@ -2686,11 +2605,13 @@ finalizeBtn.addEventListener("click", async () => {
   const res = await apiPost("/finalize_template", { final_template: tpl });
 
   if (res.message) {
-    appendMessage(`🎉 ${res.message}`, "bot");
+    const savedPathMsg = res.path ? `<br><small style="color:var(--text-muted);">Saved file: <code>${escapeHtml(res.path)}</code></small>` : "";
+    appendMessage(`🎉 ${escapeHtml(res.message)}${savedPathMsg}`, "bot");
   } else if (res.template_id) {
-    appendMessage(`🎉 Template saved (ID: ${res.template_id})`, "bot");
+    const savedPathMsg = res.path ? `<br><small style="color:var(--text-muted);">Saved file: <code>${escapeHtml(res.path)}</code></small>` : "";
+    appendMessage(`🎉 Template saved (ID: ${escapeHtml(res.template_id)})${savedPathMsg}`, "bot");
   }
-  if (res.template_id) {
+  if (res.template_id || res.path) {
     downloadJsonBtn.disabled = false;
   }
 });
@@ -2722,9 +2643,15 @@ sendBtn.addEventListener("click", async () => {
     appendMessage("⚠️ Please enter your survey requirement or select an option to get started.", "bot");
     return;
   }
+
+  if (isGenerating) {
+    appendMessage("⏳ Please wait, your survey request is being generated…", "bot");
+    return;
+  }
+
   userInput.value = "";
 
-  // 1. Active focus area inline input exists → submit as focus area
+  // 1. Active focus area input for "Generate More" variations
   const moreFocusInput = document.getElementById("moreFocusInput");
   if (moreFocusInput) {
     moreFocusInput.value = txt;
@@ -2733,62 +2660,63 @@ sendBtn.addEventListener("click", async () => {
     return;
   }
 
-  // 2. Active inline question input exists → handle answer
-  const inlineQ = document.getElementById("inlineQ");
-  if (inlineQ) {
-    handleAnswer(txt);
-    return;
-  }
-
-  // 3. Currently in an active question flow → handle answer
-  if (Array.isArray(questionFlow) && questionFlow.length > 0 && currentQuestionIndex < questionFlow.length) {
-    handleAnswer(txt);
-    return;
-  }
-
-  // 4. Templates are already generated → treat input as template refinement / generate more request
-  if (storedTemplates.length > 0) {
-    if (isInvalidInputText(txt)) {
-      appendMessage(escapeHtml(txt), "user");
-      appendMessage(`⚠️ <b>"${escapeHtml(txt)}"</b> is not a valid request. Please enter a clear topic, focus area, or question requirement.`, "bot");
+  // 2. Active question flow during initial setup (only when templates are not generated yet)
+  if (storedTemplates.length === 0) {
+    const inlineQ = document.getElementById("inlineQ") || document.querySelector(".input-inline input, input.input-inline");
+    if (inlineQ || (Array.isArray(questionFlow) && questionFlow.length > 0 && currentQuestionIndex < questionFlow.length)) {
+      if (inlineQ) {
+        inlineQ.value = txt;
+      }
+      handleAnswer(txt);
       return;
     }
+  }
 
+  // 3. Templates already generated → send text directly to backend API for refinement/generation
+  if (storedTemplates.length > 0) {
     appendMessage(escapeHtml(txt), "user");
     appendMessage(`✨ Generating templates for: "${escapeHtml(txt)}"...`, "bot");
 
-    const res = await apiPost("/generate_more_surveys", {
-      focus_area: txt,
-      survey_type: surveyContext.survey_type || "general",
-      context: {
-        original_user_input: originalUserInput,
-        detected_survey_type: surveyContext.survey_type,
-        detected_audience: surveyContext.audience,
-        detected_purpose: surveyContext.purpose,
-        detected_touchpoint: surveyContext.touchpoint,
-        question_flow: [],
-        skip_questions: true
+    isGenerating = true;
+    if (sendBtn) sendBtn.disabled = true;
+    try {
+      const res = await apiPost("/generate_more_surveys", {
+        focus_area: txt,
+        survey_type: surveyContext.survey_type || "general",
+        context: {
+          original_user_input: originalUserInput,
+          detected_survey_type: surveyContext.survey_type,
+          detected_audience: surveyContext.audience,
+          detected_purpose: surveyContext.purpose,
+          detected_touchpoint: surveyContext.touchpoint,
+          question_flow: [],
+          skip_questions: true
+        }
+      });
+
+      const extraTemplates = res.templates || res.surveys || [];
+      if ((res.error || res.message) && !extraTemplates.length) {
+        appendMessage(res.message || res.error || "⚠️ Could not generate more variations.", "bot");
       }
-    });
 
-    if (res.message && (!res.templates || !res.templates.length)) {
-      appendMessage(res.message, "bot");
-    }
+      if (extraTemplates.length) {
+        const extra = extraTemplates.map(normalizeTemplate);
+        storedTemplates = storedTemplates.concat(extra);
+        renderTemplates();
 
-    if (res.templates && res.templates.length) {
-      const extra = res.templates.map(normalizeTemplate);
-      storedTemplates = storedTemplates.concat(extra);
-      renderTemplates();
-
-      previewSubtitle.textContent = `${storedTemplates.length} templates`;
-      appendMessage("✅ Added new templates matching your update.", "bot");
-    } else if (!res.message) {
-      appendMessage("⚠️ Could not generate templates for this update.", "bot");
+        previewSubtitle.textContent = `${storedTemplates.length} templates`;
+        appendMessage("✅ Added new templates matching your update.", "bot");
+      } else if (!res.message) {
+        appendMessage("⚠️ Could not generate templates for this update.", "bot");
+      }
+    } finally {
+      isGenerating = false;
+      if (sendBtn) sendBtn.disabled = false;
     }
     return;
   }
 
-  // 5. Otherwise → start new initial flow
+  // 4. Otherwise → start new initial flow
   startFlow(txt);
 });
 
