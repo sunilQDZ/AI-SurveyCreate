@@ -205,3 +205,51 @@ User request:
     except Exception as e:
         print("[WARNING] OpenAI analysis failed:", e)
         return empty_result
+
+
+def generate_dynamic_radio_options_with_openai(question_text: str, topic_hint: str) -> list:
+    """
+    Calls OpenAI to dynamically generate 3–4 realistic, industry-tailored single choice (radio/MCQ) options
+    based on the question text and topic context.
+    Falls back to heuristic domain generator if OpenAI is unavailable.
+    """
+    question_text = (question_text or "").strip()
+    topic_hint = (topic_hint or "").strip()
+    if not question_text:
+        return ["Option 1", "Option 2", "Option 3"]
+
+    prompt = f"""
+Generate 3–4 realistic, industry-specific single-choice options for this survey question:
+Question: "{question_text}"
+Industry/Topic Context: "{topic_hint or 'General'}"
+
+RULES:
+- Return ONLY a JSON array of strings (e.g., ["Same day delivery", "1-2 days", "3-5 days", "Over a week"]).
+- Do NOT include numbering, prefixes, markdown fences, or conversational text.
+- Make choices highly relevant to the specific domain/industry of the topic.
+"""
+    try:
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            timeout=8,
+            messages=[
+                {"role": "system", "content": "You are a survey expert. Output a JSON array of strings ONLY."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=150
+        )
+        content = resp.choices[0].message.content.strip()
+        m = re.search(r"\[.*\]", content, re.DOTALL)
+        if m:
+            opts = json.loads(m.group())
+            if isinstance(opts, list) and len(opts) >= 2:
+                clean_opts = [str(o).strip() for o in opts if str(o).strip()]
+                if len(clean_opts) >= 2:
+                    return clean_opts
+    except Exception as e:
+        print("[WARNING] OpenAI dynamic radio option generation timed out or failed:", e)
+
+    from services.template_engine import get_domain_dynamic_radio_options
+    return get_domain_dynamic_radio_options(question_text, topic_hint)
+

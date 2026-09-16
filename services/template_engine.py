@@ -118,6 +118,16 @@ def get_domain_dynamic_radio_options(question_text: str = "", topic_hint: str = 
     t_lower = (topic_hint or "").lower()
     combined = f"{q_lower} {t_lower}"
 
+    # Try OpenAI dynamic option generation first
+    try:
+        from services.ai_service import generate_dynamic_radio_options_with_openai
+        ai_opts = generate_dynamic_radio_options_with_openai(question_text, topic_hint)
+        if ai_opts and isinstance(ai_opts, list) and len(ai_opts) >= 2:
+            return ai_opts
+    except Exception as e:
+        print("[WARNING] AI option generation fallback to heuristic:", e)
+
+
     # E-commerce / Retail / Delivery / Product
     if any(k in combined for k in ["delivery", "shipping", "courier", "dispatch", "order"]):
         if "time" in q_lower or "how fast" in q_lower or "when" in q_lower:
