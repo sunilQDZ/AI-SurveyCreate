@@ -140,7 +140,28 @@ class TestDatatypeAndQueryValidation(unittest.TestCase):
         self.assertTrue(isinstance(q2["options"], list))
         self.assertGreater(len(q2["options"]), 0)
 
+    def test_industry_dynamic_radio_options(self):
+        """Test that radio question options are dynamically generated based on industry input (Food, Healthcare, E-commerce, Banking)."""
+        from services.template_engine import get_domain_dynamic_radio_options
+        
+        # Food & Dining
+        food_opts = get_domain_dynamic_radio_options("Which channel did you order from?", "Food Delivery")
+        self.assertIn("Home Delivery", food_opts)
+
+        # Healthcare / Hospital
+        health_opts = get_domain_dynamic_radio_options("Which department did you visit?", "Hospital Care")
+        self.assertIn("Doctor / Specialist", health_opts)
+
+        # E-commerce / Delivery
+        ecom_opts = get_domain_dynamic_radio_options("What was your delivery time?", "Online Shopping")
+        self.assertIn("Same day delivery", ecom_opts)
+
+        # Banking / Payments
+        bank_opts = get_domain_dynamic_radio_options("Which payment method was used?", "Banking Service")
+        self.assertIn("Credit / Debit Card", bank_opts)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

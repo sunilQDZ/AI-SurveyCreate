@@ -109,6 +109,85 @@ def normalize_template_scales(template: dict, forced_type: str):
     return template
 
 
+def get_domain_dynamic_radio_options(question_text: str = "", topic_hint: str = "") -> list:
+    """
+    Generates dynamic, industry and topic-tailored options for radio questions.
+    Analyzes question text and topic keywords (e.g., E-commerce, Healthcare, Banking, Food, Education, Software, Travel).
+    """
+    q_lower = (question_text or "").lower()
+    t_lower = (topic_hint or "").lower()
+    combined = f"{q_lower} {t_lower}"
+
+    # E-commerce / Retail / Delivery / Product
+    if any(k in combined for k in ["delivery", "shipping", "courier", "dispatch", "order"]):
+        if "time" in q_lower or "how fast" in q_lower or "when" in q_lower:
+            return ["Same day delivery", "1–2 business days", "3–5 business days", "More than a week"]
+        return ["Home Delivery", "Store Pickup / Click & Collect", "Locker Pickup", "Express Shipping"]
+
+    if any(k in combined for k in ["return", "refund", "exchange"]):
+        return ["Defective / Damaged item", "Wrong size / color", "Item not as described", "Changed mind"]
+
+    if any(k in combined for k in ["shop", "store", "buy", "purchase", "e-commerce", "ecommerce", "retail"]):
+        if "channel" in q_lower or "where" in q_lower or "how did you" in q_lower:
+            return ["Online Website", "Mobile App", "Physical Store", "Social Media Marketplace"]
+        return ["Very convenient", "Moderately convenient", "Difficult", "Extremely difficult"]
+
+    # Food / Restaurant / Café / Dining
+    if any(k in combined for k in ["food", "restaurant", "cafe", "café", "dining", "meal", "order", "eat", "menu", "pizza", "burger"]):
+        if "channel" in q_lower or "how" in q_lower or "order" in q_lower:
+            return ["Dine-in", "Takeaway / Pickup", "Home Delivery", "Drive-thru"]
+        if "time" in q_lower or "meal" in q_lower:
+            return ["Breakfast", "Lunch", "Dinner", "Snack / Beverages"]
+        return ["Food Taste & Quality", "Portion Size", "Packaging & Hygiene", "Delivery Speed"]
+
+    # Healthcare / Hospital / Clinic / Medical
+    if any(k in combined for k in ["health", "hospital", "clinic", "medical", "doctor", "patient", "nurse", "pharmacy"]):
+        if "department" in q_lower or "who" in q_lower or "staff" in q_lower:
+            return ["Doctor / Specialist", "Nursing Staff", "Reception / Front Desk", "Billing & Insurance"]
+        if "type" in q_lower or "channel" in q_lower or "visit" in q_lower:
+            return ["In-person Clinic Visit", "Telehealth / Video Consultation", "Emergency Room", "Pharmacy / Lab"]
+        return ["Fully recovered", "Significantly improved", "No change", "Needs follow-up"]
+
+
+    # Banking / Finance / Payments / Billing
+    if any(k in combined for k in ["bank", "banking", "finance", "payment", "billing", "loan", "card", "atm", "account"]):
+        if "channel" in q_lower or "how" in q_lower:
+            return ["Mobile Banking App", "Online Web Portal", "ATM", "Branch Visit", "Phone Customer Care"]
+        if "payment" in q_lower or "method" in q_lower:
+            return ["Credit / Debit Card", "UPI / Instant Transfer", "Net Banking", "Cash on Delivery / Cash"]
+        return ["Instant / Immediate", "Within 24 hours", "2–3 business days", "Delayed / Over 3 days"]
+
+    # Education / Learning / Course / School / Student
+    if any(k in combined for k in ["education", "school", "university", "college", "course", "learning", "student", "teacher"]):
+        if "mode" in q_lower or "how" in q_lower:
+            return ["Online / Remote", "In-person Classroom", "Hybrid / Blended Learning"]
+        return ["Video Lectures", "Interactive Assignments", "Reading Materials", "Live Sessions / Webinars"]
+
+    # Software / App / SaaS / Tech Support
+    if any(k in combined for k in ["app", "software", "website", "system", "tech", "laptop", "repair", "device"]):
+        if "device" in q_lower or "platform" in q_lower:
+            return ["Mobile App (iOS/Android)", "Desktop / Laptop Web", "Tablet", "In-Store Kiosk"]
+        if "issue" in q_lower or "problem" in q_lower:
+            return ["Login / Password Issue", "Navigation / UI Confusion", "System Lag / Slow Speed", "Payment Error"]
+
+    # Travel / Hotel / Stay / Transport
+    if any(k in combined for k in ["hotel", "travel", "flight", "booking", "trip", "stay", "room"]):
+        if "purpose" in q_lower or "type" in q_lower:
+            return ["Business Trip", "Leisure / Vacation", "Family Trip", "Solo Travel"]
+        return ["Direct Hotel Website", "Mobile App", "Third-party Agent (OTA)", "Walk-in Desk"]
+
+    # Frequency questions across any industry
+    if any(k in q_lower for k in ["how often", "frequency", "how frequently", "how many times"]):
+        return ["Daily", "2–3 times a week", "Monthly", "Rarely / First time"]
+
+    # Default Yes/No/Partially for direct binary questions
+    if q_lower.startswith(("did ", "do ", "does ", "is ", "are ", "was ", "were ", "have ", "has ", "can ")):
+        return ["Yes, completely", "Partially", "No, not at all"]
+
+    # Fallback balanced industry single choice options
+    return ["Exceeded expectations", "Met expectations", "Below expectations", "Uncertain"]
+
+
 def enforce_survey_pattern(template: dict, topic_hint: str = "", default_max: int = 5) -> dict:
     """
     Enforces strict question pattern constraints on survey templates:
@@ -118,6 +197,7 @@ def enforce_survey_pattern(template: dict, topic_hint: str = "", default_max: in
     4. Exactly ONE NPS question per template (at index 0).
     5. Exactly ONE Text question per template (at the last index).
     6. Middle questions are a randomized, varied mix of scale types (rating, csat, ces, radio, mcq).
+    7. Radio and MCQ options are dynamically generated based on industry topic & question intent.
     """
     questions = template.get("questions", [])
     if not isinstance(questions, list):
@@ -137,7 +217,7 @@ def enforce_survey_pattern(template: dict, topic_hint: str = "", default_max: in
                 "scale_type": r_scale
             }
             if r_scale in ["radio", "mcq"]:
-                q_filler["options"] = ["Very satisfied", "Satisfied", "Neutral", "Unsatisfied"]
+                q_filler["options"] = get_domain_dynamic_radio_options(q_filler["question"], topic)
             questions.append(q_filler)
     elif len(questions) > target_count:
         questions = questions[:target_count]
@@ -190,21 +270,33 @@ def enforce_survey_pattern(template: dict, topic_hint: str = "", default_max: in
         if st in ["nps", "text"]:
             new_scale = random.choice(allowed_middle_scales)
             q["scale_type"] = new_scale
-            if new_scale == "radio" and not q.get("options"):
-                q["options"] = ["Yes", "No", "Not sure"]
+            if new_scale == "radio":
+                q["options"] = get_domain_dynamic_radio_options(q.get("question", ""), topic)
             elif new_scale == "mcq" and not q.get("options"):
-                q["options"] = ["Quality", "Speed", "Price", "Customer Service"]
+                q["options"] = ["Quality", "Speed", "Price", "Customer Support"]
 
     # Step 5: Final strict enforcement of Q0 and Q_last scale types
     questions[0]["scale_type"] = "nps"
     questions[-1]["scale_type"] = "text"
 
-    # Step 6: Ensure radio/mcq options exist
+    # Step 6: Ensure radio/mcq options exist & apply dynamic industry options if generic
+    generic_sets = [
+        {"yes", "no", "not sure"},
+        {"option 1", "option 2", "option 3"},
+        {"yes", "no"}
+    ]
     for q in questions:
-        if q.get("scale_type") == "radio" and not q.get("options"):
-            q["options"] = ["Yes", "No", "Not sure"]
-        elif q.get("scale_type") == "mcq" and not q.get("options"):
-            q["options"] = ["Option 1", "Option 2", "Option 3"]
+        st = q.get("scale_type")
+        if st == "radio":
+            raw_opts = [str(o).strip() for o in q.get("options", []) if str(o).strip()]
+            opts_set = set(o.lower() for o in raw_opts)
+            if not raw_opts or opts_set in generic_sets:
+                q["options"] = get_domain_dynamic_radio_options(q.get("question", ""), topic)
+            else:
+                q["options"] = raw_opts
+
+        elif st == "mcq" and not q.get("options"):
+            q["options"] = ["Quality & Features", "Speed & Performance", "Pricing & Value", "Customer Service"]
 
     template["questions"] = questions
     return template
