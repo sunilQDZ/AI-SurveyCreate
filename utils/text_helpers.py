@@ -69,3 +69,17 @@ def extract_requested_question_count(text: str) -> int | None:
     if m2:
         return words_map.get(m2.group(1).lower())
     return None
+
+
+def truncate_text_display(text: str, max_chars: int = 35) -> str:
+    """
+    Truncate long user input text for UI warning messages (e.g. 35 chars max + '...').
+    Prevents bloated UI error messages when users input long text/gibberish.
+    """
+    if not text:
+        return ""
+    clean = str(text).strip()
+    if len(clean) <= max_chars:
+        return clean
+    return clean[:max_chars].strip() + "..."
+

@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify
 
 from config import client, OPENAI_MODEL, ALLOWED_SCALE_TYPES
-from utils.text_helpers import extract_json_array, extract_requested_question_count, clamp_duration
+from utils.text_helpers import extract_json_array, extract_requested_question_count, clamp_duration, truncate_text_display
 from services.validation_service import (
     is_greeting_input, is_invalid_input, is_valid_input_ai, is_off_topic_question
 )
@@ -74,6 +74,7 @@ def validate_input():
             "options": []
         }), 400
 
+    display_text = truncate_text_display(text)
     is_greeting = is_greeting_input(text)
     is_invalid = not is_valid_input_ai(text) or is_off_topic_question(text)
 
@@ -82,7 +83,7 @@ def validate_input():
         valid_types = ["nps", "csat", "ces", "general", "not sure"]
         mapped = any(t in low for t in valid_types) or not is_invalid
         if is_greeting or not mapped:
-            msg = f"⚠️ \"{text}\" is a greeting." if is_greeting else f"⚠️ \"{text}\" is not a valid survey type."
+            msg = f"⚠️ \"{display_text}\" is a greeting." if is_greeting else f"⚠️ \"{display_text}\" is not a valid survey type."
             return jsonify({
                 "is_valid": False,
                 "input": text,
@@ -93,7 +94,7 @@ def validate_input():
 
     elif question_id == "audience":
         if is_greeting or is_invalid:
-            msg = f"⚠️ \"{text}\" is a greeting." if is_greeting else f"⚠️ \"{text}\" is not a valid target audience."
+            msg = f"⚠️ \"{display_text}\" is a greeting." if is_greeting else f"⚠️ \"{display_text}\" is not a valid target audience."
             return jsonify({
                 "is_valid": False,
                 "input": text,
@@ -104,7 +105,7 @@ def validate_input():
 
     elif question_id == "purpose":
         if is_greeting or is_invalid:
-            msg = f"⚠️ \"{text}\" is a greeting." if is_greeting else f"⚠️ \"{text}\" is not a valid survey purpose."
+            msg = f"⚠️ \"{display_text}\" is a greeting." if is_greeting else f"⚠️ \"{display_text}\" is not a valid survey purpose."
             return jsonify({
                 "is_valid": False,
                 "input": text,
@@ -115,7 +116,7 @@ def validate_input():
 
     elif question_id == "touchpoint":
         if is_greeting or is_invalid:
-            msg = f"⚠️ \"{text}\" is a greeting." if is_greeting else f"⚠️ \"{text}\" is not a valid touchpoint."
+            msg = f"⚠️ \"{display_text}\" is a greeting." if is_greeting else f"⚠️ \"{display_text}\" is not a valid touchpoint."
             return jsonify({
                 "is_valid": False,
                 "input": text,
@@ -128,7 +129,7 @@ def validate_input():
         return jsonify({
             "is_valid": False,
             "input": text,
-            "message": f"⚠️ \"{text}\" is a greeting. Please enter a specific survey requirement or topic.",
+            "message": f"⚠️ \"{display_text}\" is a greeting. Please enter a specific survey requirement or topic.",
             "question": None,
             "options": []
         })
@@ -137,10 +138,11 @@ def validate_input():
     return jsonify({
         "is_valid": is_valid,
         "input": text,
-        "message": None if is_valid else f"⚠️ \"{text}\" is not a valid survey topic or requirement. Please enter a meaningful input.",
+        "message": None if is_valid else f"⚠️ \"{display_text}\" is not a valid survey topic or requirement. Please enter a meaningful input.",
         "question": None,
         "options": []
     })
+
 
 
 # ---------- GENERATE QUESTION FLOW ----------
@@ -202,9 +204,10 @@ def generate_question_flow():
                 "options": ["NPS", "CSAT", "CES", "General / Not sure"]
             }
         ]
+        display_input = truncate_text_display(user_input)
         return jsonify({
             "is_invalid": True,
-            "invalid_message": f"⚠️ \"{user_input}\" is not a valid survey topic or requirement. Please provide a clear survey requirement (e.g., Customer Satisfaction, Laptop Repair, Food Quality).",
+            "invalid_message": f"⚠️ \"{display_input}\" is not a valid survey topic or requirement. Please provide a clear survey requirement (e.g., Customer Satisfaction, Laptop Repair, Mobile App Experience).",
             "all_detected": False,
             "skip_questions": False,
             "question_flow": question_flow,
@@ -214,6 +217,7 @@ def generate_question_flow():
             "detected_touchpoint": None,
             "original_user_input": user_input
         })
+
 
     requested_type_raw = (data.get("survey_type") or "").strip().lower()
     audience_from_payload = (data.get("audience") or "").strip()
@@ -328,7 +332,14 @@ def generate_survey():
     requested_type_raw = sanitize_string(data.get("survey_type")).lower()
 
     raw_answers = data.get("answers")
+    if isinstance(raw_answers, str):
+        try:
+            import json
+            raw_answers = json.loads(raw_answers)
+        except Exception:
+            raw_answers = {}
     answers = raw_answers if isinstance(raw_answers, dict) else {}
+
     purpose = (
         sanitize_string(data.get("target_purpose"))
         or sanitize_string(data.get("survey_purpose"))
@@ -351,17 +362,20 @@ def generate_survey():
     if is_greeting_input(audience) or is_invalid_input(audience):
         audience = ""
 
+    display_input = truncate_text_display(user_input)
     if (not user_input or is_greeting_input(user_input) or is_invalid_input(user_input)) and not (purpose or touchpoint or audience):
         if is_greeting_input(user_input):
             return jsonify({
                 "error": "Invalid input",
-                "message": f"⚠️ \"{user_input}\" is a greeting. Please enter a specific survey topic or requirement."
+                "message": f"⚠️ \"{display_input}\" is a greeting. Please enter a specific survey topic or requirement."
             }), 400
         elif user_input and is_invalid_input(user_input):
             return jsonify({
                 "error": "Invalid input",
-                "message": f"⚠️ \"{user_input}\" is not a valid survey topic or requirement. Please enter a clear requirement (e.g., Customer Satisfaction, Food Quality, Pricing)."
+                "message": f"⚠️ \"{display_input}\" is not a valid survey topic or requirement. Please enter a clear requirement (e.g., Customer Satisfaction, Laptop Repair, Pricing)."
             }), 400
+
+
         else:
             return jsonify({
                 "error": "Missing user_input",
@@ -521,19 +535,31 @@ def generate_more_surveys():
     if not focus_area:
         return jsonify({"error": "Missing focus_area", "message": "⚠️ Please enter a focus area for generating more survey variations."}), 400
 
+    display_focus = truncate_text_display(focus_area)
     if is_greeting_input(focus_area):
-        return jsonify({"error": "Invalid focus_area", "message": f"⚠️ \"{focus_area}\" is a greeting. Please enter a specific focus area or requirement (e.g., Food Quality, Pricing)."}), 400
+        return jsonify({"error": "Invalid focus_area", "message": f"⚠️ \"{display_focus}\" is a greeting. Please enter a specific focus area or requirement (e.g., Customer Satisfaction, Pricing)."}), 400
 
     if not is_valid_input_ai(focus_area) or is_off_topic_question(focus_area):
-        return jsonify({"error": "Invalid focus_area", "message": f"⚠️ \"{focus_area}\" is not a valid focus area. Please enter a clear requirement (e.g., Food Quality, 7 questions, Pricing)."}), 400
+        return jsonify({"error": "Invalid focus_area", "message": f"⚠️ \"{display_focus}\" is not a valid focus area. Please enter a clear requirement (e.g., Customer Satisfaction, 7 questions, Pricing)."}), 400
 
-    ctx = data.get("context") or {}
+
+
+    ctx = data.get("context")
+    if isinstance(ctx, str):
+        try:
+            import json
+            ctx = json.loads(ctx)
+        except Exception:
+            ctx = {}
+    if not isinstance(ctx, dict):
+        ctx = {}
 
     original_user_input = (ctx.get("original_user_input") or "").strip()
     detected_survey_type = (ctx.get("detected_survey_type") or "").strip()
     detected_audience = (ctx.get("detected_audience") or "").strip()
     detected_purpose = (ctx.get("detected_purpose") or "").strip()
     detected_touchpoint = (ctx.get("detected_touchpoint") or "").strip()
+
 
     if not ctx or not original_user_input:
         ai_re = analyze_user_input_with_openai(focus_area)
@@ -672,14 +698,31 @@ def customize_selected_template():
     scale_changes = raw_scale_changes if isinstance(raw_scale_changes, dict) else {}
     remove_input = sanitize_string(data.get("remove_input"))
 
+    if focus_area:
+        display_focus = truncate_text_display(focus_area)
+        if is_greeting_input(focus_area):
+            return jsonify({"error": "Invalid focus_area", "message": f"⚠️ \"{display_focus}\" is a greeting. Please enter a specific focus area or requirement (e.g., Customer Satisfaction, Pricing)."}), 400
+
+        if not is_valid_input_ai(focus_area) or is_off_topic_question(focus_area):
+            return jsonify({"error": "Invalid focus_area", "message": f"⚠️ \"{display_focus}\" is not a valid focus area. Please enter a clear requirement (e.g., Customer Satisfaction, 7 questions, Pricing)."}), 400
+
+
+
+
     if not templates or not choice:
         return jsonify({"error": "Missing 'templates' or 'choice'.", "message": "⚠️ Please select a template first to customize."}), 400
 
     try:
-        index = int(re.search(r"\d+", choice).group()) - 1
+        match = re.search(r"\d+", choice)
+        if not match:
+            return jsonify({"error": "Invalid template choice format.", "message": "⚠️ Please select a valid template choice (e.g. Template 1)."}), 400
+        index = int(match.group()) - 1
+        if index < 0 or index >= len(templates):
+            return jsonify({"error": "Template choice out of bounds.", "message": f"⚠️ Template choice '{choice}' is out of bounds. Please select a valid template choice."}), 400
         selected = templates[index]
     except Exception:
         return jsonify({"error": "Invalid template choice format.", "message": "⚠️ Please select a valid template choice."}), 400
+
 
     if not selected or not isinstance(selected, dict):
         return jsonify({"error": "Invalid template format.", "message": "⚠️ Invalid template format."}), 400
@@ -805,8 +848,9 @@ def customize_selected_template():
 
         elif action == "remove":
             if not remove_input:
-                return jsonify({"message": "Specify which question to remove (e.g., Q2 or keyword)."}), 400
+                return jsonify({"error": "Missing remove_input", "message": "⚠️ Specify which question to remove (e.g., Q2 or keyword)."}), 400
 
+            display_remove = truncate_text_display(remove_input)
             remove_targets = [r.strip().lower() for r in remove_input.split(",") if r.strip()]
             to_remove = []
 
@@ -818,7 +862,7 @@ def customize_selected_template():
                         break
 
             if not to_remove:
-                return jsonify({"message": f"No question found matching '{remove_input}'."}), 404
+                return jsonify({"error": "Question not found", "message": f"⚠️ No question found matching '{display_remove}'."}), 404
 
             for i in sorted(set(to_remove), reverse=True):
                 questions.pop(i)
@@ -832,6 +876,7 @@ def customize_selected_template():
                 }],
                 "selected_template": selected
             })
+
 
     if scale_action == "yes" and scale_changes:
         for key, new_scale in scale_changes.items():
@@ -894,4 +939,6 @@ def finalize_template():
         "template_id": template_id,
         "path": file_path
     })
+
+
 
