@@ -111,6 +111,36 @@ class TestDatatypeAndQueryValidation(unittest.TestCase):
         self.assertEqual(data["message"], "Template finalized successfully.")
         self.assertIn("template_id", data)
 
+    def test_radio_question_structure(self):
+        """Test that radio scale_type questions contain valid non-empty options array."""
+        mock_template = {
+            "title": "Radio Test Survey",
+            "purpose": "Verify radio options",
+            "duration": "2 mins",
+            "questions": [
+                {"question": "On a scale of 0-10, recommend us?", "scale_type": "nps"},
+                {"question": "Did you encounter any issue?", "scale_type": "rating"},
+                {"question": "Any other feedback?", "scale_type": "text"}
+            ]
+        }
+        # Change Q2 scale to radio
+        res = self.client.post("/customize_selected_template", json={
+            "choice": "Template 1",
+            "scale_action": "yes",
+            "scale_changes": {"q2": "radio"},
+            "templates": [mock_template]
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        updated_template = data["selected_template"]
+        q2 = updated_template["questions"][1]
+        
+        self.assertEqual(q2["scale_type"], "radio")
+        self.assertIn("options", q2)
+        self.assertTrue(isinstance(q2["options"], list))
+        self.assertGreater(len(q2["options"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
+
