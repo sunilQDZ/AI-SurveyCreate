@@ -16,14 +16,54 @@ from services.storage_service import save_history, save_finalized_template
 survey_bp = Blueprint("survey", __name__)
 
 
+def extract_request_payload(req) -> dict:
+    """
+    Safely extract JSON body, URL query string arguments, or form data from request.
+    Always guarantees returning a python dict regardless of method or content-type.
+    """
+    payload = {}
+    if req.is_json:
+        data = req.get_json(force=True, silent=True)
+        if isinstance(data, dict):
+            payload.update(data)
+    if req.args:
+        payload.update(req.args.to_dict())
+    if req.form:
+        payload.update(req.form.to_dict())
+    return payload
+
+
+def sanitize_string(val, default: str = "") -> str:
+    """
+    Enforces string data type and strips surrounding whitespace.
+    Safely handles None, int, float, bool, list, dict without crashing.
+    """
+    if val is None:
+        return default
+    if isinstance(val, str):
+        return val.strip()
+    if isinstance(val, (int, float, bool)):
+        return str(val).strip()
+    return default
+
+
 # ---------- VALIDATE INPUT ----------
-@survey_bp.route("/validate_input", methods=["POST"])
+@survey_bp.route("/validate_input", methods=["GET", "POST"])
 def validate_input():
-    data = request.get_json(force=True, silent=True) or {}
-    if not isinstance(data, dict):
-        data = {}
-    text = (data.get("text") or data.get("user_input") or data.get("user_prompt") or data.get("answer") or data.get("prompt") or data.get("topic") or data.get("input") or "").strip()
-    question_id = (data.get("question_id") or data.get("field_type") or "").strip().lower()
+    data = extract_request_payload(request)
+    text = (
+        sanitize_string(data.get("text"))
+        or sanitize_string(data.get("user_input"))
+        or sanitize_string(data.get("user_prompt"))
+        or sanitize_string(data.get("answer"))
+        or sanitize_string(data.get("prompt"))
+        or sanitize_string(data.get("topic"))
+        or sanitize_string(data.get("input"))
+    )
+    question_id = (
+        sanitize_string(data.get("question_id"))
+        or sanitize_string(data.get("field_type"))
+    ).lower()
 
     if not text:
         return jsonify({
@@ -32,7 +72,7 @@ def validate_input():
             "message": "⚠️ Input cannot be empty. Please provide a valid response.",
             "question": None,
             "options": []
-        })
+        }), 400
 
     is_greeting = is_greeting_input(text)
     is_invalid = not is_valid_input_ai(text) or is_off_topic_question(text)
@@ -104,12 +144,17 @@ def validate_input():
 
 
 # ---------- GENERATE QUESTION FLOW ----------
-@survey_bp.route("/generate_question_flow", methods=["POST"])
+@survey_bp.route("/generate_question_flow", methods=["GET", "POST"])
 def generate_question_flow():
-    data = request.get_json(force=True, silent=True) or {}
-    if not isinstance(data, dict):
-        data = {}
-    user_input = (data.get("user_input") or data.get("user_prompt") or data.get("prompt") or data.get("text") or data.get("topic") or data.get("input") or "").strip()
+    data = extract_request_payload(request)
+    user_input = (
+        sanitize_string(data.get("user_input"))
+        or sanitize_string(data.get("user_prompt"))
+        or sanitize_string(data.get("prompt"))
+        or sanitize_string(data.get("text"))
+        or sanitize_string(data.get("topic"))
+        or sanitize_string(data.get("input"))
+    )
 
     if is_greeting_input(user_input):
         question_flow = [
@@ -269,18 +314,35 @@ def generate_question_flow():
 
 
 # ---------- GENERATE SURVEY ----------
-@survey_bp.route("/generate_survey", methods=["POST"])
+@survey_bp.route("/generate_survey", methods=["GET", "POST"])
 def generate_survey():
-    data = request.get_json(force=True, silent=True) or {}
-    if not isinstance(data, dict):
-        data = {}
-    user_input = (data.get("user_input") or data.get("user_prompt") or data.get("prompt") or data.get("text") or data.get("topic") or data.get("input") or "").strip()
-    requested_type_raw = (data.get("survey_type") or "").strip().lower()
+    data = extract_request_payload(request)
+    user_input = (
+        sanitize_string(data.get("user_input"))
+        or sanitize_string(data.get("user_prompt"))
+        or sanitize_string(data.get("prompt"))
+        or sanitize_string(data.get("text"))
+        or sanitize_string(data.get("topic"))
+        or sanitize_string(data.get("input"))
+    )
+    requested_type_raw = sanitize_string(data.get("survey_type")).lower()
 
-    answers = data.get("answers") or {}
-    purpose = (data.get("target_purpose") or data.get("survey_purpose") or answers.get("purpose") or "").strip()
-    touchpoint = (data.get("touchpoint") or answers.get("touchpoint") or "").strip()
-    audience = (data.get("target_audience") or data.get("audience") or answers.get("audience") or "").strip()
+    raw_answers = data.get("answers")
+    answers = raw_answers if isinstance(raw_answers, dict) else {}
+    purpose = (
+        sanitize_string(data.get("target_purpose"))
+        or sanitize_string(data.get("survey_purpose"))
+        or sanitize_string(answers.get("purpose"))
+    )
+    touchpoint = (
+        sanitize_string(data.get("touchpoint"))
+        or sanitize_string(answers.get("touchpoint"))
+    )
+    audience = (
+        sanitize_string(data.get("target_audience"))
+        or sanitize_string(data.get("audience"))
+        or sanitize_string(answers.get("audience"))
+    )
 
     if is_greeting_input(purpose) or is_invalid_input(purpose):
         purpose = ""
@@ -446,19 +508,15 @@ QUESTION FORMAT:
 
 
 # ---------- GENERATE MORE ----------
-@survey_bp.route("/generate_more_surveys", methods=["POST"])
+@survey_bp.route("/generate_more_surveys", methods=["GET", "POST"])
 def generate_more_surveys():
-    data = request.get_json(force=True, silent=True) or {}
-    if not isinstance(data, dict):
-        data = {}
-
+    data = extract_request_payload(request)
     focus_area = (
-        data.get("focus_area")
-        or data.get("user_input")
-        or data.get("prompt")
-        or data.get("refinement")
-        or ""
-    ).strip()
+        sanitize_string(data.get("focus_area"))
+        or sanitize_string(data.get("user_input"))
+        or sanitize_string(data.get("prompt"))
+        or sanitize_string(data.get("refinement"))
+    )
 
     if not focus_area:
         return jsonify({"error": "Missing focus_area", "message": "⚠️ Please enter a focus area for generating more survey variations."}), 400
@@ -585,23 +643,34 @@ OUTPUT FORMAT:
 
 
 # ---------- CUSTOMIZE SELECTED TEMPLATE ----------
-@survey_bp.route("/customize_selected_template", methods=["POST"])
+@survey_bp.route("/customize_selected_template", methods=["GET", "POST"])
 def customize_selected_template():
-    data = request.get_json(force=True, silent=True) or {}
-    if not isinstance(data, dict):
-        data = {}
-    templates = data.get("templates", [])
+    data = extract_request_payload(request)
+    templates = data.get("templates")
+    if isinstance(templates, str):
+        try:
+            import json
+            templates = json.loads(templates)
+        except Exception:
+            templates = []
     if not isinstance(templates, list):
         templates = []
-    choice = (data.get("choice") or "").lower()
-    action = (data.get("action") or "").lower()
-    focus_area = (data.get("focus_area") or "").strip()
-    complexity = (data.get("complexity") or "").strip()
-    scale_action = (data.get("scale_action") or "").lower()
-    scale_changes = data.get("scale_changes", {}) or {}
-    if not isinstance(scale_changes, dict):
-        scale_changes = {}
-    remove_input = (data.get("remove_input") or "").strip()
+
+    choice = sanitize_string(data.get("choice")).lower()
+    action = sanitize_string(data.get("action")).lower()
+    focus_area = sanitize_string(data.get("focus_area"))
+    complexity = sanitize_string(data.get("complexity"))
+    scale_action = sanitize_string(data.get("scale_action")).lower()
+
+    raw_scale_changes = data.get("scale_changes")
+    if isinstance(raw_scale_changes, str):
+        try:
+            import json
+            raw_scale_changes = json.loads(raw_scale_changes)
+        except Exception:
+            raw_scale_changes = {}
+    scale_changes = raw_scale_changes if isinstance(raw_scale_changes, dict) else {}
+    remove_input = sanitize_string(data.get("remove_input"))
 
     if not templates or not choice:
         return jsonify({"error": "Missing 'templates' or 'choice'.", "message": "⚠️ Please select a template first to customize."}), 400
@@ -627,6 +696,13 @@ def customize_selected_template():
         selected["purpose"] = custom_purpose.strip()
 
     edited_questions = data.get("edited_questions") or data.get("updated_questions")
+    if isinstance(edited_questions, str):
+        try:
+            import json
+            edited_questions = json.loads(edited_questions)
+        except Exception:
+            edited_questions = []
+
     if edited_questions and isinstance(edited_questions, list):
         for i, edited_q in enumerate(edited_questions):
             if i < len(questions) and isinstance(edited_q, dict):
@@ -797,12 +873,17 @@ def customize_selected_template():
 
 
 # ---------- FINALIZE TEMPLATE ----------
-@survey_bp.route("/finalize_template", methods=["POST"])
+@survey_bp.route("/finalize_template", methods=["GET", "POST"])
 def finalize_template():
-    data = request.get_json(force=True, silent=True) or {}
-    if not isinstance(data, dict):
-        data = {}
+    data = extract_request_payload(request)
     final_template = data.get("final_template")
+    if isinstance(final_template, str):
+        try:
+            import json
+            final_template = json.loads(final_template)
+        except Exception:
+            final_template = None
+
     if not final_template or not isinstance(final_template, dict):
         return jsonify({"error": "Missing or invalid final_template", "message": "⚠️ Please select a template first to finalize."}), 400
 
@@ -813,3 +894,4 @@ def finalize_template():
         "template_id": template_id,
         "path": file_path
     })
+
