@@ -604,16 +604,16 @@ def customize_selected_template():
     remove_input = (data.get("remove_input") or "").strip()
 
     if not templates or not choice:
-        return jsonify({"error": "Missing 'templates' or 'choice'."}), 400
+        return jsonify({"error": "Missing 'templates' or 'choice'.", "message": "⚠️ Please select a template first to customize."}), 400
 
     try:
         index = int(re.search(r"\d+", choice).group()) - 1
         selected = templates[index]
     except Exception:
-        return jsonify({"error": "Invalid template choice format."}), 400
+        return jsonify({"error": "Invalid template choice format.", "message": "⚠️ Please select a valid template choice."}), 400
 
     if not selected or not isinstance(selected, dict):
-        return jsonify({"error": "Invalid template format."}), 400
+        return jsonify({"error": "Invalid template format.", "message": "⚠️ Invalid template format."}), 400
 
     questions = selected.get("questions", [])
     title = selected.get("title", "General Feedback")
@@ -804,7 +804,7 @@ def finalize_template():
         data = {}
     final_template = data.get("final_template")
     if not final_template or not isinstance(final_template, dict):
-        return jsonify({"error": "Missing or invalid final_template"}), 400
+        return jsonify({"error": "Missing or invalid final_template", "message": "⚠️ Please select a template first to finalize."}), 400
 
     template_id, file_path = save_finalized_template(final_template)
 

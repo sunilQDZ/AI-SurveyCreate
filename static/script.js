@@ -2422,9 +2422,12 @@ function renderTemplates() {
 // ===============================
 // GENERATE MORE TEMPLATES
 // ===============================
-generateMoreBtn.addEventListener("click", () => {
+generateMoreBtn.addEventListener("click", async () => {
   if (!storedTemplates.length) {
-    appendMessage("⚠️ Generate templates first.", "bot");
+    const res = await apiPost("/generate_more_surveys", { focus_area: "" });
+    if (res && res.message) {
+      appendMessage(res.message, "bot");
+    }
     return;
   }
 
@@ -2501,7 +2504,10 @@ generateMoreBtn.addEventListener("click", () => {
 // ===============================
 customizeBtn.addEventListener("click", async () => {
   if (selectedTemplateIndex === null) {
-    appendMessage("⚠️ Select a template first.", "bot");
+    const res = await apiPost("/customize_selected_template", { templates: storedTemplates, choice: "" });
+    if (res && res.message) {
+      appendMessage(res.message, "bot");
+    }
     return;
   }
 
@@ -2596,7 +2602,10 @@ function askTextOnce(question) {
 // ===============================
 finalizeBtn.addEventListener("click", async () => {
   if (selectedTemplateIndex === null) {
-    appendMessage("⚠️ Select a template first.", "bot");
+    const res = await apiPost("/finalize_template", { final_template: null });
+    if (res && res.message) {
+      appendMessage(res.message, "bot");
+    }
     return;
   }
 
